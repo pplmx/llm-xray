@@ -133,3 +133,99 @@ func TestChipGlyphCoversEveryByte(t *testing.T) {
 	tr := ui.NewTester(a.View, 1180, 720)
 	tr.Frame()
 }
+
+// TestInactiveControlNoteNamesExactlyTheOffKnobs covers the rendering side of controlScopeNote.
+//
+// TestControlScopeNoteMatchesTheRanges proves the sentence is built from the range constants; it
+// does not prove the sentence is drawn on the right stages, or that a knob that is ON is left out
+// of it. Both can go wrong independently — the `off` slice is assembled by three negated inStages
+// calls in lesson(), and inverting any one of them leaves the note present, well-formed, and
+// naming the wrong knobs.
+//
+// Measured on all seven stages at 1500×4000, where every stage's text is on screen at once:
+// stages 1-2 name 层/头/温度, 3-4 name 温度, 5-6 name 头/温度, and 7 names 层/头 — exactly the
+// complement of the range constants, with stage 7 the only one whose note mentions 温度 as the
+// knob that works there.
+func TestInactiveControlNoteNamesExactlyTheOffKnobs(t *testing.T) {
+	total := 0
+	for step := 0; step < len(lessons); step++ {
+		a := newTestApp(t)
+		a.Step = step
+		tr := ui.NewTester(a.View, 1500, 4000)
+		tr.Frame()
+
+		var wantOff []string
+		if !inStages(step, layerFrom, layerTo) {
+			wantOff = append(wantOff, "层")
+		}
+		if !inStages(step, headFrom, headTo) {
+			wantOff = append(wantOff, "头")
+		}
+		if !inStages(step, tempFrom, tempTo) {
+			wantOff = append(wantOff, "温度")
+		}
+
+		note := ""
+		for _, s := range tr.Texts() {
+			if strings.Contains(s, "在这一步不生效") {
+				note = s
+				break
+			}
+		}
+
+		if len(wantOff) == 0 {
+			// Every knob is live on this stage, so there is nothing to signpost.
+			if note != "" {
+				t.Fatalf("stage %d has every control enabled but still prints %q", step+1, note)
+			}
+			continue
+		}
+		if note == "" {
+			t.Fatalf("stage %d dims %v but prints no note saying where they apply", step+1, wantOff)
+		}
+		total++
+
+		// Quoted knobs are the off ones; a live knob must not appear in the「」list.
+		for _, knob := range []string{"层", "头", "温度"} {
+			quoted := strings.Contains(note, "「"+knob) || strings.Contains(note, "/ "+knob) ||
+				strings.Contains(note, knob+" /")
+			isOff := false
+			for _, o := range wantOff {
+				if o == knob {
+					isOff = true
+				}
+			}
+			if isOff && !quoted {
+				t.Fatalf("stage %d: %q is dimmed but the note does not name it: %q",
+					step+1, knob, note)
+			}
+			if !isOff && quoted {
+				t.Fatalf("stage %d: %q is enabled but the note names it as not working: %q",
+					step+1, knob, note)
+			}
+		}
+
+		// And the note has to say where the knob does apply, which is the whole point of
+		// replacing a greyed-out control with an explanation.
+		for _, o := range wantOff {
+			var want string
+			switch o {
+			case "层":
+				want = fmt.Sprintf("第 %d–%d 步选层", layerFrom+1, layerTo+1)
+			case "头":
+				want = fmt.Sprintf("第 %d–%d 步选头", headFrom+1, headTo+1)
+			case "温度":
+				want = fmt.Sprintf("第 %d 步改温度", tempFrom+1)
+			}
+			if !strings.Contains(note, want) {
+				t.Fatalf("stage %d dims %q but the note does not say %q: %q", step+1, o, want, note)
+			}
+		}
+	}
+	// Six of seven stages dim at least one knob on the bundle's ranges. If that ever drops to a
+	// couple, the loop is still passing but the feature has gone quiet.
+	if total < 5 {
+		t.Fatalf("only %d of %d stages print an inactive-control note; the ranges or the lesson "+
+			"body changed shape", total, len(lessons))
+	}
+}

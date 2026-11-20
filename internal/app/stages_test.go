@@ -415,3 +415,95 @@ func TestRailReadoutNeverShowsThePlaceholder(t *testing.T) {
 		t.Fatalf("railTokenText(-1) returned %q, want the placeholder", got)
 	}
 }
+
+// TestSampleDrawRefusesADistributionWithNoMass pins what happens when nothing can be drawn.
+//
+// Two inputs reach the final failure return: a nil distribution, which the length check catches
+// first, and an all-zero one, which walks the whole accumulator without picking anything and then
+// finds no index with mass to rescue. Both have to report failure rather than returning index 0 of
+// a distribution with no mass — measured: changing that final return to a success makes this test
+// fail with "an all-zero distribution produced a draw at index 0".
+//
+// The other rescue inside the function, which picks the last index with mass when the
+// accumulator stops short, is not reached here or anywhere else; its comment records why.
+func TestSampleDrawRefusesADistributionWithNoMass(t *testing.T) {
+	a := newTestApp(t)
+
+	if _, ok := a.sampleDraw(nil); ok {
+		t.Fatal("a nil distribution produced a draw")
+	}
+	if d, ok := a.sampleDraw(make([]float32, 8)); ok {
+		t.Fatalf("an all-zero distribution produced a draw at index %d", d.pick)
+	}
+
+	// A distribution that sums to 1 is drawn from normally, and the reported interval brackets
+	// the pick's own mass — this is what the card prints, so it has to agree with the draw.
+	probs := make([]float32, 256)
+	for i := range probs {
+		probs[i] = 1.0 / 256
+	}
+	d, ok := a.sampleDraw(probs)
+	if !ok {
+		t.Fatal("a uniform distribution produced no draw")
+	}
+	if d.lo > d.x || d.x > d.hi {
+		t.Fatalf("the draw reports x=%.6f outside its own interval [%.6f, %.6f]", d.x, d.lo, d.hi)
+	}
+	if math.Abs(d.prob-1.0/256) > 1e-6 {
+		t.Fatalf("the draw reports p=%v for a uniform distribution", d.prob)
+	}
+}
+
+// TestSampleDrawHandlesADistributionThatSummedLowInFloat32 covers a shape the rescue was written
+// for, and records that the rescue does not actually fire on it.
+//
+// 5000 masses of 1/5000 sum to 0.99994122 in float32, and the prompt "q180928" hashes to
+// x = 0.99999700 — a point above that total. The intuition is that the walk therefore misses and
+// the rescue has to choose. It does not: sampleDraw accumulates in float64 while the masses are
+// float32, so its own running total reaches 1 and the last index is picked normally.
+//
+// That is worth asserting as it stands. It pins the draw's answer for a near-1 x, and it records
+// the measured reason the rescue stays untested — which is more useful than a test named for a
+// branch it never enters. The rescue's own comment carries the same finding.
+func TestSampleDrawHandlesADistributionThatSummedLowInFloat32(t *testing.T) {
+	a := newTestApp(t)
+	a.Prompt = "q180928"
+
+	const n = 5000
+	probs := make([]float32, n)
+	for i := range probs {
+		probs[i] = 1.0 / float32(n)
+	}
+
+	// The premise, measured: a float32 walk stops short and x sits above it.
+	var f32 float32
+	for _, p := range probs {
+		f32 += p
+	}
+	var seed uint64 = 1469598103934665603
+	for _, b := range []byte(a.Prompt) {
+		seed ^= uint64(b)
+		seed *= 1099511628211
+	}
+	x := float64(seed%1000003) / 1000003.0
+	if float64(f32) >= 1 {
+		t.Fatalf("a float32 walk of this distribution reached %v, not short of 1; the case "+
+			"this test describes no longer exists", f32)
+	}
+	if x <= float64(f32) {
+		t.Fatalf("x = %.10f is not above the float32 total %.10f", x, f32)
+	}
+
+	// The behaviour: the draw lands on the last index via the normal path, because its own
+	// accumulator is float64.
+	d, ok := a.sampleDraw(probs)
+	if !ok {
+		t.Fatal("the draw failed on a distribution with mass at every index")
+	}
+	if d.pick != n-1 {
+		t.Fatalf("the draw picked %d; with x above every boundary it should land on %d", d.pick, n-1)
+	}
+	if d.lo > d.x || d.x > d.hi {
+		t.Fatalf("x = %v is outside the reported interval [%v, %v]", d.x, d.lo, d.hi)
+	}
+}

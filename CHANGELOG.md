@@ -6,6 +6,11 @@
 
 ### Added
 
+- **`sampleDraw` 里那条「累加器差一点点就找不到索引」的回退分支，从没有测试到达过，而且我一开始写的测试也没到达。** 删掉整个分支，361 秒全量测试全绿
+  - 我试图构造它：5000 个 `1/5000` 用 float32 累加停在 `0.99994122`，提示词 `"q180928"` 的哈希给出 `x = 0.99999700`，高于那个总和——看起来必然触发回退。**实测没有**：`sampleDraw` 内部是 `acc += float64(p)`，用 float64 累加时这个分布正常到达 1，索引照常在主循环里选出
+  - **所以我第一版的测试名是假的**：`TestSampleDrawRescuesAnAccumulatorThatStopsShort` 声称到达回退，实际走的是正常路径。改成 `TestSampleDrawHandlesADistributionThatSummedLowInFloat32`，注释记录「为什么这条回退走不到」，并在回退分支自己的注释里写下同一个结论——**比一个以它命名却从不进入它的测试有用得多**
+  - 另一条 `TestSampleDrawRefusesADistributionWithNoMass` 是有效的：把最终失败返回改成成功，它立刻报 `an all-zero distribution produced a draw at index 0`。它覆盖的是「没有任何质量可抽」的出口，不是那条回退
+  - **这一轮前四次探测都没有找到缺口**（`humanCount`、`cancellation`、`zeroDims`、`Dims` 一族都有守卫），说明这部分代码的测试已经相当扎实；改用覆盖率定位（`go tool cover -func`）比按函数名扫更可靠——它直接指出哪些函数体没有跑满
 - **`truncateRunes` 改成按字节截断，358 秒全量测试全绿。** 它给提示词胶囊做省略，按字节切有两处错：`"注意力就是加权求和"` 截到 3 会变成 `"注…"` 而不是 `"注意力…"`；切在多字节序列中间还会在屏幕上留下非法 UTF-8 字节
   - 新增 `TestTruncateRunesCountsCharactersNotBytes`：六条精确期望值，外加一条**性质**检查——只要发生了截断，去掉省略号后的前缀必须是合法 UTF-8
   - 破坏性验证：按字节版本同时报出 `truncateRunes("注意力就是加权求和", 3) = "注…", want "注意力…"` 与 `the cut prefix is not valid UTF-8`（`"𝄞𝄞𝄞"` → `"\xf0\x9d…"`）

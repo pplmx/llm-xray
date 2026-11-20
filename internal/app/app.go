@@ -1607,6 +1607,13 @@ func (a *App) sampleDraw(probs []float32) (draw, bool) {
 	if d.pick < 0 {
 		// Floating point can leave acc a hair under x; fall back to the
 		// smallest id that actually has mass.
+		//
+		// This branch has never been reached in a test. The accumulator here is float64 while
+		// the probabilities are float32, so the loss that motivates the branch is much smaller
+		// than a float32 walk suffers: measured with 5000 masses of 1/5000 — whose float32 sum
+		// stops at 0.99994122 — the float64 walk lands on the last index normally, and no
+		// prompt hashing above that gap produced a miss. It stays as a guard against the
+		// float64 walk stopping short, which needs a distribution this app does not build.
 		for i := len(probs) - 1; i >= 0; i-- {
 			if probs[i] > 0 {
 				d.pick = i

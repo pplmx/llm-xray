@@ -9968,26 +9968,79 @@ func TestEveryPinReleaseTriggerIsInTheReadme(t *testing.T) {
 		t.Fatal("the README no longer documents the pinned cell")
 	}
 
-	pinned := func() *App {
-		a := newTestApp(t)
-		a.Step = 2
-		a.KeyQ, a.KeyK = 20, 5
-		return a
-	}
+	// Each action goes through the path a reader takes, not through the helper it ends in.
+	//
+	// This used to call `a.clearHover()` by hand for the layer, head and autoplay rows, which
+	// made those three checks vacuous: deleting the real `a.clearHover()` from the layer
+	// control's Changed handler left this test green, because the test performed the very step
+	// it was supposed to be verifying. Measured — with that line removed, nothing in the suite
+	// failed, while clicking a layer in the running app would leave the cell pinned.
+	//
+	// The layer and head rows now click the segmented control and the autoplay row runs one
+	// frame of playback, so the clearing has to come from the handler.
 	releases := []struct {
 		phrase string // how the README names it
-		act    func(a *App)
+		step   int    // stage to set up on
+		act    func(t *testing.T, a *App, tr *ui.Tester)
 	}{
-		{"切换阶段", func(a *App) { a.selectStep(3) }},
-		{"切换层", func(a *App) { a.Layer = 1; a.clearHover() }},
-		{"切换头", func(a *App) { a.Head = 1; a.clearHover() }},
-		{"自动播放推进", func(a *App) { a.Step++; a.clearHover() }},
-		{"选中另一个 token", func(a *App) { a.selectToken(3, false) }},
-		{"采样续写", func(a *App) { a.sampleNext() }},
+		{"切换阶段", 2, func(t *testing.T, a *App, tr *ui.Tester) {
+			// The sidebar row, which is on screen at every size, rather than a card chip
+			// that may be below the fold.
+			if err := tr.Click(stageRowsLabel(4)); err != nil {
+				t.Fatalf("click the sidebar's stage 5 row: %v", err)
+			}
+			tr.Frame()
+			if a.Step != 4 {
+				t.Fatalf("the sidebar click did not switch stage, so this row proves nothing")
+			}
+		}},
+		{"切换层", 4, func(t *testing.T, a *App, tr *ui.Tester) {
+			before := a.Layer
+			if err := tr.Click("1"); err != nil {
+				t.Fatalf("click layer 1: %v", err)
+			}
+			tr.Frame()
+			if a.Layer == before {
+				t.Fatalf("clicking layer 1 did not change the layer, so this row proves nothing")
+			}
+		}},
+		{"切换头", 3, func(t *testing.T, a *App, tr *ui.Tester) {
+			before := a.Head
+			if err := tr.Click("H1"); err != nil {
+				t.Fatalf("click head H1: %v", err)
+			}
+			tr.Frame()
+			if a.Head == before {
+				t.Fatalf("clicking H1 did not change the head, so this row proves nothing")
+			}
+		}},
+		{"自动播放推进", 2, func(t *testing.T, a *App, tr *ui.Tester) {
+			a.Playing = true
+			a.NextAt = time.Time{}
+			tr.Advance(2 * playStepInterval)
+			tr.Frame()
+			if a.Step == 2 {
+				t.Fatalf("playback did not advance, so this row proves nothing")
+			}
+		}},
+		{"选中另一个 token", 2, func(t *testing.T, a *App, tr *ui.Tester) {
+			a.selectToken(3, false)
+		}},
+		{"采样续写", 2, func(t *testing.T, a *App, tr *ui.Tester) {
+			a.sampleNext()
+		}},
 	}
 	for _, r := range releases {
-		a := pinned()
-		r.act(a)
+		a := newTestApp(t)
+		a.Step = r.step
+		tr := ui.NewTester(a.View, 1500, 3000)
+		tr.Frame()
+		a.KeyQ, a.KeyK = 20, 5
+		a.SelToken = 20
+		tr.Frame()
+
+		r.act(t, a, tr)
+
 		if a.KeyQ >= 0 || a.KeyK >= 0 {
 			t.Fatalf("%s did not release the pin (still at (%d,%d))", r.phrase, a.KeyQ, a.KeyK)
 		}

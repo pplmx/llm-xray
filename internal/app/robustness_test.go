@@ -504,19 +504,33 @@ func TestNoStageNamesTheBundleContextAtAnotherWindow(t *testing.T) {
 // rather than by reading code.
 //
 // The FFN card's heading and opening paragraph said "把 256 个字节按余弦排名" and "什么都不做的
-// 话，256 个里随便一个的平均名次是 128". Both are the bundle's vocabulary written as literals,
-// and both sat directly above a table that already used first.Vocab — so a 128-wide checkpoint
-// printed a heading promising 256 rankings over a table of 128, with the chance rank still
-// reading 128 when it had become 64. Measured by truncating the bundle's embedding table to 128
-// ids: the heading and the paragraph were the only strings that did not follow the config.
+// 话，256 个里随便一个的平均名次是 128". Both are the bundled checkpoint's vocabulary written as
+// literals, and both sat directly above a table that already used first.Vocab.
 //
-// vocab is the last config field whose prose could be swept this way. d_model, d_ff and ctx have
-// the same guard; n_head has TestEveryHeadCountRendersAndCountsItself; n_layer has neither, and
-// TestCardsThatCompareLayersNeedTwoOfThem records why — the cards that name one layer return
-// early below two layers, so there is no prose left to check and a "两层 survived unchanged" sweep
-// was measured to be vacuous. It is separate from the others because the copy is made differently
-// again: a smaller vocabulary just drops embedding rows, where d_ff rebuilds both projections and
-// n_head only relabels a split.
+// **No reader can reach that state today, and the test says so here rather than pretending
+// otherwise.** Weights.validate (unexported, reached through Parse) rejects any vocab other than
+// ByteVocab — "vocab is 128, want 256 for byte-level tokens" — because the tokenizer is byte-level
+// and a prompt's ids only ever run 0..255. So unlike d_model, d_ff, ctx and n_head, whose copies
+// all load through Parse and are states a -weights file can actually put on screen, a 128-wide
+// vocabulary is unreachable through the documented entry point. This test constructs the state in
+// memory to keep the prose honest against the value it reads, and that is all it establishes.
+//
+// It is still worth keeping, for two reasons that are worth being precise about. The card had
+// two ways to say the same quantity and they disagreed: first.Vocab fed the table while the
+// heading typed 256. Correctness by construction costs one fmt.Sprintf and removes the question
+// for good, whether or not a reader can currently pose it. And ByteVocab is a constant, not a law
+// of nature: if the tokenizer ever gains a real vocabulary, this guard is already in place, and
+// the reachability note above is the exact sentence that has to be revisited when it does.
+//
+// The other config guards in this file do not carry this caveat, and the difference is measured,
+// not assumed: d_ff=192, n_head=2 and ctx=32 were each round-tripped through json.Marshal and
+// model.Parse while writing this comment, and all three returned a nil error.
+//
+// n_layer is deliberately absent: TestCardsThatCompareLayersNeedTwoOfThem records why — the cards
+// that name one layer return early below two layers, so there is no prose left to sweep and a
+// "两层 survived unchanged" check was measured to be vacuous. The copy here is made differently
+// from its siblings again, which is why it is a separate test: a smaller vocabulary just drops
+// embedding rows, where d_ff rebuilds both projections and n_head only relabels a split.
 func TestNoStageNamesTheBundleVocabulary(t *testing.T) {
 	base, err := model.Bundled()
 	if err != nil {

@@ -1,8 +1,10 @@
 package model
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -161,5 +163,94 @@ func TestLoadErrorsSayWhatWasBeingLoaded(t *testing.T) {
 	}
 	if got := strings.Count(err.Error(), "weights"); got != 1 {
 		t.Fatalf("the empty-file error names weights %d times: %q", got, err.Error())
+	}
+}
+
+// TestVocabularyIsPinnedToByteVocab records which config fields a -weights file can vary.
+//
+// internal/app has one "no stage names the bundle's <field>" guard per config dimension, and each
+// sweeps the app by rendering it on a modified copy. Four of those copies — d_model, d_ff, ctx and
+// n_head — are states a reader can actually reach: round-tripping them through json.Marshal and
+// Parse returns a nil error. vocab is not. This test pins the asymmetry, so the app-side guard's
+// comment claiming vocab is unreachable has an owner and cannot quietly become false.
+//
+// It matters because the two situations call for different work. An unreachable sweep is still
+// worth keeping — it stops the same quantity being said two ways — but a reader of the app tests
+// should not conclude that -weights can put a 128-id map on screen, and anyone who lifts the
+// byte-tokenizer restriction needs to know that this is the test that will notice.
+func TestVocabularyIsPinnedToByteVocab(t *testing.T) {
+	base, err := Bundled()
+	if err != nil {
+		t.Skipf("no bundled weights: %v", err)
+	}
+
+	// vocab: rejected, and the message has to name both numbers so a reader knows what to fix.
+	w := *base
+	w.Config.Vocab = base.Config.Vocab / 2
+	w.TokEmbed = base.TokEmbed[:w.Config.Vocab*base.Config.DModel]
+	data, err := json.Marshal(&w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, perr := Parse(data, "test")
+	if perr == nil {
+		t.Fatalf("Parse accepted vocab %d; the byte-level tokenizer only produces ids 0..%d, so "+
+			"either the tokenizer learned a real vocabulary or this restriction was lifted — "+
+			"in both cases the vocab sweep in internal/app is reachable now and its comment "+
+			"needs rewriting", w.Config.Vocab, ByteVocab-1)
+	}
+	for _, want := range []string{strconv.Itoa(w.Config.Vocab), strconv.Itoa(ByteVocab)} {
+		if !strings.Contains(perr.Error(), want) {
+			t.Fatalf("the vocab error does not name %s: %v", want, perr)
+		}
+	}
+
+	// The four fields the app sweeps that a reader *can* load. Kept here as one list so the
+	// asymmetry is stated in one place: adding a reachable field to the app's guards means
+	// adding it here, and lifting the vocab pin means deleting from this list or moving vocab
+	// into it.
+	reachable := []struct {
+		name string
+		make func(*Weights) *Weights
+	}{
+		{"ctx", func(b *Weights) *Weights {
+			w := *b
+			w.Config = b.Config
+			w.Config.Ctx = b.Config.Ctx / 2
+			w.PosEmbed = b.PosEmbed[:w.Config.Ctx*b.Config.DModel]
+			return &w
+		}},
+		{"n_head", func(b *Weights) *Weights {
+			w := *b
+			w.Config = b.Config
+			w.Config.NHead = 2
+			return &w
+		}},
+		{"d_ff", func(b *Weights) *Weights {
+			w := *b
+			w.Config = b.Config
+			w.Config.DFF = b.Config.DFF / 2
+			w.Layers = nil
+			for _, l := range b.Layers {
+				c := l
+				c.W1 = make([]float32, w.Config.DModel*w.Config.DFF)
+				c.W2 = make([]float32, w.Config.DFF*w.Config.DModel)
+				copy(c.W1, l.W1)
+				copy(c.W2, l.W2)
+				w.Layers = append(w.Layers, c)
+			}
+			return &w
+		}},
+	}
+	for _, c := range reachable {
+		data, err := json.Marshal(c.make(base))
+		if err != nil {
+			t.Fatalf("%s: marshal: %v", c.name, err)
+		}
+		if _, err := Parse(data, "test"); err != nil {
+			t.Fatalf("Parse rejected a %s copy (%v), so the app's %s sweep renders a state no "+
+				"reader can load; its guard comment needs the same caveat the vocab one now "+
+				"carries", c.name, err, c.name)
+		}
 	}
 }

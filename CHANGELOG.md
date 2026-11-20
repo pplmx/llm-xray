@@ -6,6 +6,13 @@
 
 ### Added
 
+- **查清了一件上一轮没查的事：配置维度的守卫里，只有 vocab 那一条测的是读者到不了的状态。** 上一轮修掉第 6 步卡片里写死的 256 之后，顺手加了一条 `TestNoStageNamesTheBundleVocabulary`。这轮问了一个更基础的问题——**这些「换一份配置重新渲染」的守卫，那几份配置真的能加载吗？** 逐个实测（`json.Marshal` 再 `Parse` 回来）：
+  - `d_ff=192`、`n_head=2`、`ctx=32` 三种都返回 `nil`，说明它们都是 `-weights` 真能摆到屏幕上的状态，对应的 app 守卫测的是可达路径
+  - **`vocab=128` 返回 `weights: vocab is 128, want 256 for byte-level tokens`**——`Weights.validate` 把词表硬锁在 `ByteVocab`，因为分词器是字节级的、提示词产生的 id 只走 0..255。所以那条守卫构造的是一个**任何读者都到不了的状态**
+  - **这不否定上一轮的修复**——同一张卡把同一个量写成了两种说法（表格用 `first.Vocab`、标题打字 256），改成一处生成是对的，成本只有一次 `fmt.Sprintf`。但守卫的注释不能让人以为「-weights 可以加载 128 宽的词表」，这种误解比缺一条守卫更贵
+  - 新增 `TestVocabularyIsPinnedToByteVocab` 把这条不对称钉住：vocab 必须被拒且错误信息点名两个数；同时把三个**可达**字段的副本往返 `Parse` 一次，要求全部通过。两种破坏性验证各报各的：放开 vocab 限制 → `Parse accepted vocab 128 … the vocab sweep in internal/app is reachable now and its comment needs rewriting`；把 ctx 改成只接受 64 → `Parse rejected a ctx copy … its guard comment needs the same caveat the vocab one now carries`
+  - `TestNoStageNamesTheBundleVocabulary` 的注释重写成如实版本：明说这个状态当前不可达、为什么仍然值得留着（同一个量的两种说法、以及 `ByteVocab` 是常量而非自然规律——分词器若真有了词表，这条守卫已经就位，而那句可达性说明正是要改的地方）
+  - **一个细节记下来**：`validate` 是未导出的方法，接在 `Weights` 上，只能经 `Parse` 到达。注释里写成 `model.validate` 是错的，已改为 `Weights.validate`（经 `Parse` 到达）
 - **手机布局逐张看过之后，修掉两处同一类缺陷：会在窄屏换行的那一行，仍按「第二列还在旁边」算宽度。**
   - **FFN 卡片的标题被说明挤成两行**：375 DIP 下「升维 → GELU → 降维」被画成「升维 → GELU」/「降维」，一个箭头被读成两个步骤。`sectionTitle` 改成标题 `Shrink(0)` + 行 `Wrap`，让说明换行而不是标题
   - **热力图为旁边的图例预留了 160 DIP**：手机上图例在矩阵下方，预留什么都没换到——64 token 的矩阵在 375 DIP 下只有 180 宽、格子 2.5 DIP，而可用的 335 DIP 本可给出 4.9 DIP 的格子
@@ -641,7 +648,8 @@
 - **第 6 步「FFN 写出了答案」的标题与引导段落把词表大小写成了常量。** 它们写着「把 256 个字节按余弦排名」和「什么都不做的话，256 个里随便一个的平均名次是 128」——这是内置权重那份的 vocab，而**同一张卡片下面的表格与「常见误解」早就在用 `first.Vocab`**，所以换一份 128 词表的权重加载后，标题承诺 256 次排名、表格只有 128 行，而「随便一个是第 128 名」在一个 128 宽的词表里应该是第 64 名
   - 修法：两处都改成从 `first.Vocab` 生成（`first := rows[0]` 提前到标题之前）。实测 vocab=128 时输出「把 128 个字节按余弦排名」「128 个里随便一个的平均名次是 64」，vocab=256 时文字与改前逐字相同
   - **截图 58 张逐字节 0 变化**：默认权重下输出文字不变，`docs/*.png` 不需要重生成
-  - 新增 `TestNoStageNamesTheBundleVocabulary`，用的还是那套判据：把整份权重换一份 vocab 减半的副本，重新渲染七个阶段，要求**点名该数且上下文一字未改**的字符串不存在。这是配置维度家族的第五个成员（`d_model`、`d_ff`、`ctx`、`n_head`、`n_layer` 各有守卫），vocab 是最后一个还有正文可扫的字段
+  - 新增 `TestNoStageNamesTheBundleVocabulary`，用的还是那套判据：把整份权重换一份 vocab 减半的副本，重新渲染七个阶段，要求**点名该数且上下文一字未改**的字符串不存在
+  - **上一轮这条注释里有两处说得不准，本轮改正**：其一写成「五个配置字段各有守卫」，实际 `n_layer` 得到的是一份「为什么这样查不到东西」的记录，不是守卫；其二没有说明 **vocab 是 `Weights.validate` 唯一硬性锁定的字段**——除它之外的 `d_model`、`d_ff`、`ctx`、`n_head` 都能通过 `Parse` 加载，而 vocab≠256 会被直接拒绝。详见本轮 Added
   - **判据必须是「数字的邻域不变」而不是「整句不变」**：先试了整串比对，结果**只抓到标题、抓不到正文**——正文里同时印着实测名次，换了词表那些数字也变，于是整句变了、里面的 256 安然无恙。改用现成的 `windowUnchanged`（比较数字两侧 24 字节）后两处都能抓到
   - 破坏性验证：把标题单独改回常量 → 红并打印那一行；把正文单独改回常量 → 也红。两处独立生效，不是一条断言覆盖两处
 - **补跑上一轮没跑的三个 CI 门槛，全绿；另外系统扫了九个方向，都没有找到缺陷。** 上一轮只跑了 `just check`，把 `go mod tidy` 校验、`-race` 与 `GOEXPERIMENT=simd` 留在了外面

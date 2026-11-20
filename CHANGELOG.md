@@ -659,6 +659,14 @@
 
 ### Fixed
 
+- **`mygo.json` 里有两个值，改了之后界面与打包会对不上，而没有任何测试会红。**
+  - **`android.splash` 与 `colBg` 是同一句「与背景同色，启动时不闪白」的两份字面量。** 实测把 `colBg` 改成 `#101820`，整套测试照样全绿，而每次 Android 启动都会先闪一下旧颜色
+  - **`name` 与侧栏标题是同一个词的三处拷贝**（`mygo.json` 的 `name`、`app.go` 的桌面侧栏、`compact.go` 的手机顶栏）。实测把 `name` 改成 `LLM X-Ray`，测试全绿，窗口会在一份叫 `LLM X-Ray` 的包里标题写着 `llm-xray`。这**不是设计选择**：`6a58af6` 的提交信息明确写着「The sidebar drops the anatomy metaphor with it: … becomes "llm-xray / Transformer 逐层透视"」，二者是刻意一致的
+  - **`out` 是构建目录的第四份拷贝**：`justfile` 的 `clean` 写 `rm -rf build`、`artifacts` 读 `build/*/*`、`.gitignore` 有 `/build/`、README 写 `build/<平台>/`。实测改成 `dist`，测试全绿，而 `just clean` 会留下真正的产物树、`just artifacts` 会报一个不再接收任何东西的空目录
+  - 三个新守卫：`TestAndroidSplashMatchesTheAppBackground`（把 `mygo.json` 的颜色和 `colBg` 直接比较）、`TestSidebarTitleMatchesTheBundleName`（要求**两个**绘制点都含该字符串，且渲染出的帧里能找到它）、`TestOutputDirectoryMatchesMygoJson`（justfile 两个配方 + `.gitignore` + README 四处）
+  - **侧栏那条特意断言两处而不是一处**：只 grep「有没有出现过」会漏掉「改了一处、另一处还留着旧名」——实测只改 `compact.go` 时确实被抓到
+  - 破坏性验证做了五次，两个方向都覆盖：改 splash、改 `colBg`、改 `name`、**只改 `compact.go`**、改 `out`（后者同时报出 clean、artifacts、README 三处）
+  - 这是 CONTRIBUTING 第 8 条点名的形态——「成对的东西要由一个来源决定」——也是前几轮反复出现的同一类：同一个事实被抄了多份，只有部分副本受保护
 - **CONTRIBUTING 引的那段『逐条对应 ci.yml』的命令里，`-race` 那一条少了 `-timeout 300s`。** 代码块原文是 `go test -race ./internal/model/`，而 `justfile` 的 `check-ci` 与 `ci.yml` 跑的都是 `go test -race -timeout 300s ./internal/model/`
   - 这个遗漏本身不危险（Go 默认十分钟，而这个包四秒就跑完），**正因如此没人会发现**：一个读者复制这段命令，得到的是与仓库真正门槛不同的命令，而这段代码块存在的全部意义就是告诉他门槛是什么
   - `TestCheckCIRecipeMatchesTheWorkflow` 早就把 recipe 与 workflow 钉在一起了，缺口是**第三份拷贝**——文档里那段

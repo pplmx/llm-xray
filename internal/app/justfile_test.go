@@ -1,13 +1,17 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/egoist/mygo/ui"
 )
 
 // TestArtifactsRecipeSaysWhenThereIsNothing checks `just artifacts` reports an
@@ -685,5 +689,158 @@ func TestReadmeArtifactTableNamesEveryLinuxPackage(t *testing.T) {
 					"%s", name, ext)
 			}
 		}
+	}
+}
+
+// TestAndroidSplashMatchesTheAppBackground keeps the launch screen from flashing a different
+// colour than the window it opens into.
+//
+// mygo.json sets `android.splash` to #0E1117 "与背景同色，启动时不闪白" per the CHANGELOG, and
+// theme.go sets colBg to the same literal. Nothing connected them: measured by changing colBg to
+// #101820, the whole suite stayed green while every Android launch would flash the old colour for
+// as long as the runtime takes to draw the first frame.
+//
+// This is the "two values that must agree, with no mechanism keeping them in sync" shape that
+// CONTRIBUTING lists as its eighth figure-reading mistake. The fix is the usual one: make the
+// comparison a test rather than a habit.
+func TestAndroidSplashMatchesTheAppBackground(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "mygo.json"))
+	if err != nil {
+		t.Fatalf("read mygo.json: %v", err)
+	}
+	var cfg struct {
+		Android struct {
+			Splash string `json:"splash"`
+		} `json:"android"`
+	}
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		t.Fatalf("parse mygo.json: %v", err)
+	}
+	if cfg.Android.Splash == "" {
+		t.Skip("no android.splash is configured; there is no launch colour to match")
+	}
+
+	want := ui.Hex(cfg.Android.Splash)
+	if want != colBg {
+		t.Fatalf("mygo.json sets the Android splash to %s, but the app's background is "+
+			"#%02X%02X%02X — the launch screen will flash a different colour before the first "+
+			"frame is drawn", cfg.Android.Splash, colBg.R, colBg.G, colBg.B)
+	}
+}
+
+// TestSidebarTitleMatchesTheBundleName keeps the app's own title in step with its package name.
+//
+// mygo.json's `name` decides what the bundle is called — llm-xray.app, llm-xray.exe, and the
+// label under the icon — and the sidebar's first line is the same word, which is what the rename
+// to llm-xray deliberately established ("设定 name/slug/identifier 为 llm-xray … 侧栏也随之从
+// LLM Lab 改成 llm-xray"). They are two literals with no mechanism between them: measured by
+// changing `name` to "LLM X-Ray", the whole suite stayed green while the window would open titled
+// llm-xray inside a package called LLM X-Ray.
+//
+// The occurrence count is asserted too. The title is drawn twice — app.go for the desktop sidebar
+// and compact.go for the phone header — and both have to render the same string; a check that only
+// greps for *a* match would pass with one of them left on an old name. Verified by changing only
+// the compact one.
+func TestSidebarTitleMatchesTheBundleName(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "mygo.json"))
+	if err != nil {
+		t.Fatalf("read mygo.json: %v", err)
+	}
+	var cfg struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		t.Fatalf("parse mygo.json: %v", err)
+	}
+	if cfg.Name == "" {
+		t.Fatal("mygo.json no longer sets a name; the bundle has no identity to compare against")
+	}
+
+	// Every non-test source file that draws the sidebar or compact header title.
+	for _, file := range []string{"app.go", "compact.go"} {
+		src, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
+		if !strings.Contains(string(src), strconv.Quote(cfg.Name)) {
+			t.Fatalf("%s does not draw the title %q that mygo.json names the bundle; the app "+
+				"opens under one name inside a package called another", file, cfg.Name)
+		}
+	}
+
+	// And the rendered title has to be findable, not merely present in the source: a string built
+	// from pieces would satisfy the grep above and still draw something else.
+	for _, size := range [][2]int{{1500, 940}, {375, 667}} {
+		a := newTestApp(t)
+		tr := ui.NewTester(a.View, size[0], size[1])
+		tr.Frame()
+		if _, ok := tr.Find(cfg.Name); !ok {
+			t.Fatalf("%dx%d: the title %q is not rendered", size[0], size[1], cfg.Name)
+		}
+	}
+}
+
+// TestOutputDirectoryMatchesMygoJson keeps `just clean`, `just artifacts` and .gitignore pointed
+// at the directory the build actually writes.
+//
+// mygo.json's `out` decides where `go tool mygo build` puts things; the justfile's clean recipe
+// hardcodes `rm -rf build`, its artifacts recipe reads `build/*/*`, and .gitignore ignores
+// /build/. Four copies of one word. Measured by changing `out` to "dist": the whole suite stayed
+// green while `just clean` would leave the real output tree on disk and `just artifacts` would
+// report an empty build/ that no longer receives anything.
+//
+// The README's artifact table says `build/<平台>/` too, and is checked here for the same reason —
+// it is the fifth copy and the one a reader consults first.
+func TestOutputDirectoryMatchesMygoJson(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "mygo.json"))
+	if err != nil {
+		t.Fatalf("read mygo.json: %v", err)
+	}
+	var cfg struct {
+		Out string `json:"out"`
+	}
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		t.Fatalf("parse mygo.json: %v", err)
+	}
+	if cfg.Out == "" {
+		t.Fatal("mygo.json no longer sets `out`; the build directory is implied and this test " +
+			"has nothing to compare against")
+	}
+
+	justfile, err := os.ReadFile(filepath.Join("..", "..", "justfile"))
+	if err != nil {
+		t.Fatalf("read justfile: %v", err)
+	}
+	jf := string(justfile)
+
+	// The two recipes that touch the output directory.
+	for _, want := range []struct{ recipe, needle string }{
+		{"clean", "rm -rf " + cfg.Out},
+		{"artifacts", "du -sh " + cfg.Out + "/*/*"},
+	} {
+		if !strings.Contains(jf, want.needle) {
+			t.Errorf("the %s recipe does not contain %q, so it is pointed at a directory the "+
+				"build no longer writes (mygo.json's out is %q)", want.recipe, want.needle, cfg.Out)
+		}
+	}
+
+	// .gitignore has to cover it, or every build leaves an untracked tree.
+	gitignore, err := os.ReadFile(filepath.Join("..", "..", ".gitignore"))
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+	if !strings.Contains(string(gitignore), "/"+cfg.Out+"/") {
+		t.Errorf(".gitignore does not ignore /%s/, the directory `go tool mygo build` writes to; "+
+			"a full build would leave an untracked tree", cfg.Out)
+	}
+
+	// And the README tells the reader where to look.
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatalf("read README.md: %v", err)
+	}
+	if !strings.Contains(string(readme), cfg.Out+"/<平台>/") {
+		t.Errorf("the README no longer says the artifacts land in %s/<平台>/; a reader following "+
+			"it looks in the wrong directory", cfg.Out)
 	}
 }

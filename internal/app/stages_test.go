@@ -925,3 +925,70 @@ func TestLayerClampsAnOutOfRangeIndex(t *testing.T) {
 		t.Fatalf("a Layer past the end did not clamp to the last layer")
 	}
 }
+
+// TestComputeAllFFNConcentrationSkipsLayersWithNoHiddenRows covers the skip inside the aggregator.
+//
+// computeAllFFNConcentration walks every layer and keeps the ones computeFFNConcentration could
+// measure. A layer whose Hidden rows are missing or short of the token count answers OK=false, and
+// the aggregator drops it rather than reporting a concentration computed from nothing. Deleting
+// the skip left the whole suite green across a 363s run, because the bundled trace always has
+// every row.
+//
+// The state is reachable from a partially filled checkpoint, so the test builds it by emptying one
+// layer's Hidden and requires the count to drop by exactly one — not merely to be smaller, since
+// dropping the wrong layer would be the same count.
+func TestComputeAllFFNConcentrationSkipsLayersWithNoHiddenRows(t *testing.T) {
+	a := newTestApp(t)
+	tr := a.Trace
+	if len(tr.Layers) < 2 {
+		t.Fatalf("the bundled weights have %d layers; this test needs two", len(tr.Layers))
+	}
+
+	full := computeAllFFNConcentration(tr)
+	if len(full) != len(tr.Layers) {
+		t.Fatalf("a complete trace gave %d entries for %d layers", len(full), len(tr.Layers))
+	}
+
+	saved := tr.Layers[0].Hidden
+	tr.Layers[0].Hidden = nil
+	defer func() { tr.Layers[0].Hidden = saved }()
+
+	got := computeAllFFNConcentration(tr)
+	if len(got) != len(full)-1 {
+		t.Fatalf("emptying one layer's Hidden gave %d entries, want %d", len(got), len(full)-1)
+	}
+	// The entry that survived has to be the other layer, and it has to keep its own index.
+	for _, c := range got {
+		if c.Layer == 0 {
+			t.Fatalf("the aggregate still contains layer 0, whose Hidden rows were removed")
+		}
+	}
+}
+
+// TestMeanFutureShareAnswersWithoutEnoughTokens pins the redundant guard's answer.
+//
+// The `tokens < 2` return duplicates what the loop bound and the rows check already produce —
+// measured, deleting it changes no result. It is kept for readability, so the test states the
+// behaviour rather than the guard: with nothing to compare, the answer is (0, 0) and not a
+// division by zero.
+func TestMeanFutureShareAnswersWithoutEnoughTokens(t *testing.T) {
+	a := newTestApp(t)
+	h := a.Trace.Layers[0].Heads[0]
+	dHead := a.W.Config.DModel / a.W.Config.NHead
+
+	for _, n := range []int{0, 1} {
+		share, rows := meanFutureShare(h, n, dHead)
+		if share != 0 || rows != 0 {
+			t.Fatalf("meanFutureShare with %d token(s) = (%v, %d), want (0, 0)", n, share, rows)
+		}
+	}
+
+	// With the two tokens a comparison needs, it produces a real average.
+	share, rows := meanFutureShare(h, 2, dHead)
+	if rows != 1 {
+		t.Fatalf("two tokens gave %d comparable rows, want 1", rows)
+	}
+	if share < 0 || share > 1 {
+		t.Fatalf("the future share is %v, outside [0, 1]", share)
+	}
+}

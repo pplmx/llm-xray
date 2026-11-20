@@ -6,6 +6,13 @@
 
 ### Added
 
+- **`computeAllFFNConcentration` 里「跳过测不出的层」那条 `continue` 没人管。** 删掉它，363 秒全量测试全绿——内置 trace 每一层的 `Hidden` 行都齐全，所以 `OK` 永远是 true
+  - 那个状态**确实可达**：把某一层的 `Hidden` 清空，`computeFFNConcentration` 就返回 `OK=false`。新增测试构造这个状态，并要求聚合结果**恰好少一条**（不是「变少」——丢掉错误的层也是变少，所以还要断言活下来的是另一层、索引没串）
+  - 破坏性验证：去掉 `continue` → `emptying one layer's Hidden gave 2 entries, want 1`；把 `c.Layer = li` 改成错误的索引 → `still contains layer 0`
+- **`meanFutureShare` 的 `tokens < 2` 守卫是冗余的，但留着并说明理由。** 去掉它，369 秒全量测试全绿，结果也不变——循环上界 `q < tokens-1` 在 `tokens<2` 时本来就不执行，末尾的 `rows == 0` 检查同样返回 `(0, 0)`
+  - 按第 25/43/48 轮的判断：**不可达但正确的防御，补注释而不是硬凑测试**。注释写明它是在函数开头陈述前置条件，真正执行约束的是循环上界与 `rows` 检查
+  - 仍补了一条 `TestMeanFutureShareAnswersWithoutEnoughTokens`，因为它钉住的是**行为**（0 或 1 个 token 时返回 `(0, 0)` 而不是除零），并对 2 个 token 的情况验证真的产出平均值，防止守卫把功能关掉
+- 覆盖率 **96.4% → 96.5%**
 - **把覆盖率推进到 96.4%，补上四个此前没走到的分支。**
   - **`LessonNames` 覆盖率 0%**：它是这个包里唯一被 `main.go` 调用、而 app 自己不用的导出函数（CLI 的 `-list`）。已有测试只在 `main.go` 源码里 grep `app.LessonNames()`——证明接线对了，没证明它返回的名字对。新增 `TestLessonNamesMatchesTheLessons`，并额外验证**每次返回新切片**（调用方若原地排序会污染下一次调用）
   - **`causalInvarianceLine` 66.7%**：那个「有 K 个的预测变了；第一个在位置 P」的分支只在掩码坏掉时才出现，而内置权重满足不变式，所以它从没被渲染过。用直接构造 `causalComparison` 的方式测它——这正是掩码真出问题时读者会看到的那句话

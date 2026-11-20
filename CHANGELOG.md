@@ -659,6 +659,11 @@
 
 ### Fixed
 
+- **`TestCheckCIRecipeMatchesTheWorkflow` 的注释把 `just check` 说成「about 35 seconds」，实际已是六分钟，低估十倍。** 这个数字在写下时是真的——那个提交同时记着 `race 3.0s、SIMD 34.4s、check-ci 39s warm`——之后 MyGo v0.9.1 把新窗口首帧从 13.2ms 抬到 50.3ms，而每个 tester 都是一次新窗口，同一个门槛就涨到了六分钟
+  - 处理方式不是「改成正确的秒数」，而是**把时长从注释里删掉**：它没有主人，而 CONTRIBUTING 才是读者用来规划的那个来源。这条测试关心的是**跑哪些命令**，不是跑多久
+  - 注释里保留了这段来历，因为「一个曾经准确的数字怎么变假的」比数字本身有用
+  - 顺带核了两个数：CONTRIBUTING 的「`just check` 约 6.5 分钟」与实测 363.5s（6.1 分钟）相符，未改；`stages.go` 里「嵌入占 12%、FFN 占 58%」实测为 12.15% / 58.31%，也准确，未改——它另有 `TestFFNParamShareMatchesParamCount` 守着
+- **系统扫了注释里的时长类数字**：非测试代码里只剩 `stages.go` 那处百分比（已确认由测试守卫），测试代码里就是本条修掉的这一处
 - **`Truncate` 有两条返回空的路，只有一条被测过，另一条被 app 的状态行依赖着却只写在注释里。**
   - 已知的一条是 `ctx <= 0`（`TestTruncateNonPositiveContext`）。**另一条是窗口比最后一个字符还窄**：切点落在续字节上，函数推进到 lead byte 时把整个 rune 走完，结果为空——实测 4 字节 emoji 在 ctx=1、2、3 下返回零 token
   - app.go 的状态行有个分支专为它而设（「提示词装不进 %d 个 token 的窗口」），注释里也写着「ctx=1, 2, 3 会产生零 token 而输入框里明明有字」。**模型侧没有任何测试断言过那个行为**，所以那条分支依赖的是一句注释

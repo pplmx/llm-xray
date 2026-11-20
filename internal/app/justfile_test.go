@@ -128,15 +128,23 @@ func TestConcurrencyLivesOnlyInModel(t *testing.T) {
 
 // TestCheckCIRecipeMatchesTheWorkflow keeps the local full gate in step with CI.
 //
-// `just check` deliberately stops at gofmt, vet and test — about 35 seconds — while CI also
-// verifies go.mod is tidy, races the concurrent package and re-runs everything under
-// GOEXPERIMENT=simd. That split was already documented as a known difference, but the
-// alignment had to be done by hand from a list in CONTRIBUTING.md, which is the kind of list
-// that goes stale the first time CI gains a step.
+// `just check` deliberately stops at gofmt, vet and test, while CI also verifies go.mod is
+// tidy, races the concurrent package and re-runs everything under GOEXPERIMENT=simd. That split
+// was already documented as a known difference, but the alignment had to be done by hand from a
+// list in CONTRIBUTING.md, which is the kind of list that goes stale the first time CI gains a
+// step.
+//
+// This comment used to give `just check` as "about 35 seconds", which was right when the recipe
+// was written — that commit recorded race 3.0s, SIMD 34.4s and check-ci 39s warm. MyGo v0.9.1
+// then raised a fresh window's first frame from 13.2ms to 50.3ms (see
+// docs/mygo-first-frame-regression.md), every tester is a fresh window, and the same gate now
+// takes about six minutes. The figure is gone rather than corrected: a duration in a comment has
+// no owner, and CONTRIBUTING carries the numbers a reader actually plans with. This test is
+// about which commands run, not how long they take.
 //
 // check-ci runs all of it. This test requires the recipe to exist and to run exactly the
-// commands the workflow runs, so adding a CI step without teaching the recipe fails here
-// rather than surprising a contributor with a red build.
+// commands the workflow runs, so adding a CI step without teaching the recipe fails here rather
+// than surprising a contributor with a red build.
 func TestCheckCIRecipeMatchesTheWorkflow(t *testing.T) {
 	read := func(name string) string {
 		b, err := os.ReadFile(filepath.Join("..", "..", name))

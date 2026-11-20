@@ -291,3 +291,60 @@ func TestWideWindowsUseTheirWidth(t *testing.T) {
 		}
 	}
 }
+
+// TestHorizontalClippingGuardOnlySeesBoxes is the stated limit of TestNoHorizontalClipping,
+// written as an assertion so the documentation cannot outlive the behaviour.
+//
+// CONTRIBUTING's "测不到的东西" section says the horizontal-overflow target can only be checked
+// against screenshots, because MyGo clips content to its container and reports the container's
+// width from Find. The clipping guard's name suggests otherwise, so that section now says
+// explicitly which of the two errors each one catches. This test holds both halves of that
+// claim:
+//
+//  1. A text far wider than its column reports the column's width from Find, not its own —
+//     which is why the clipping guard cannot see it.
+//  2. A box actually laid out past the window edge IS reported as such, so the guard is not
+//     vacuous.
+//
+// Verified by breaking each half: passing a narrower column makes the first assertion fail, and
+// laying a row out at a fixed x past the window makes the second one fail. Testing a
+// deliberately overflowing card in the real app was done while writing this — a 200-character
+// NoWrap insert into a stage card left TestNoHorizontalClipping green, which is the behaviour
+// asserted here rather than a bug in it.
+func TestHorizontalClippingGuardOnlySeesBoxes(t *testing.T) {
+	const columnW float32 = 200
+
+	// Half one: two texts of very different lengths, same reported width.
+	measure := func(text string) float32 {
+		var w float32
+		ui.Render(func(c *ui.Context) {
+			ui.Column(c).Width(columnW).Children(func() {
+				w = ui.Text(c, text).NoWrap().Bounds().W
+			})
+		}, 600, 60, 1)
+		return w
+	}
+	short, long := measure("短"), measure(strings.Repeat("很长的文本", 40))
+	if short != columnW || long != columnW {
+		t.Fatalf("a NoWrap text in a %.0f-wide column reports %.0f (short) and %.0f (long); "+
+			"the clipping guard relies on both being the column width", columnW, short, long)
+	}
+
+	// Half two: a box that layout actually places past the window edge is reported past it,
+	// so the clipping guard is checking a real condition rather than a constant.
+	//
+	// A fixed-width child inside a window narrower than it cannot fit; MyGo pushes it past the
+	// edge rather than shrinking it, which is exactly the layout error the guard is for.
+	var spilled bool
+	ui.Render(func(c *ui.Context) {
+		ui.Row(c).Children(func() {
+			if r := ui.Box(c).Width(900).Height(10).Bounds(); r.X+r.W > 400 {
+				spilled = true
+			}
+		})
+	}, 400, 60, 1)
+	if !spilled {
+		t.Fatal("a 900-DIP box in a 400-DIP window did not report past the edge, so " +
+			"TestNoHorizontalClipping would be checking nothing")
+	}
+}

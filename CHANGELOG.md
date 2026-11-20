@@ -693,6 +693,12 @@
 
 ### Fixed
 
+- **CONTRIBUTING 说「横向溢出只能靠截图核对」，而旁边就有一个 `TestNoHorizontalClipping`。** 两句话都不假，放在一起却会让人以为已经有测试在管这件事
+  - 实测分清了：往阶段卡片里注入 200 个字符的 `NoWrap()` 文本，`TestNoHorizontalClipping` **仍然通过**——因为 `Find` 报的是容器宽度（同一容器里放「短」和 40 遍「很长的文本」，报出的宽度都是 200）
+  - 两者管的是不同的错误：**盒子摆出窗口**是布局错误（该测试抓得到），**文字在容器内被裁掉**是排版错误（只有截图能看出来）。文档现在把这条界线写明
+  - 新增 `TestHorizontalClippingGuardOnlySeesBoxes` 把这个界线钉成断言：同宽容器里长短两段文字报出相同宽度（所以裁切不可见），而 900 DIP 的盒子放进 400 DIP 窗口时报出越界（所以那个守卫不是空转）。两半各自破坏都能红
+  - 本轮其余核对**未发现缺陷**：Android 签名键与 `mygo v0.10` 源码一致（`android.keystore` / `keyAlias` / 两个 `MYGO_ANDROID_*` 环境变量）；`mygo.json` 的全部键都在 loader 的 62 个键里，零未知；文档提到的 13 个 `just` recipe 全在 justfile 的 30 个里；justfile 里没有未文档化的 recipe（`alias`/`set`/`export`/`default`/`all`/`doctor` 是 just 内建）
+  - **三次自己的脚本写错，都当场纠正**：像素探针的背景色没生效（两区域亮像素数相同，12000 = 整块面积，明显是探针错了）；recipe 提取没考虑带参数的写法（误报四个缺失）；`columnW = 0` 的变异没有实质破坏力（两段宽度都是 0 仍相等）。**验证脚本出错是这半小时里最高频的错误来源**
 - **「两个半屏以上 / 1742–1885 DIP」这条测量写在两份文档里，守卫只读了一份。** `TestReadmeViewportOverflowMatchesTheLayout` 从渲染量出最高阶的滚动高度并核对 README 的那句话，但 `docs/keys.md` 的「滚动键为什么要单独接管」一节写了同一个性质、同一个量测区间，不在检查范围里
   - 这与第 14 轮那次 160ms 是同一形状：**一份守卫只覆盖两份拷贝中的一份**。当时为此加了 `readKeysDoc` 辅助函数，这一轮把溢出那条也接上
   - 破坏性验证：把 `keys.md` 的「两个半屏以上」改成「一个半屏」→ 报 `keys.md no longer states "两个半屏以上"`；把区间改成 `1700–1900 DIP` → 报 `keys.md no longer states "1742–1885 DIP"`

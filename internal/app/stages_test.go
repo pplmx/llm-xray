@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"llm-xray/internal/model"
 )
 
 // TestClampIndexContract pins all four answers and the trap in the n == 0 one.
@@ -649,5 +651,92 @@ func TestScrollStageByStaysInRange(t *testing.T) {
 	a.scrollStageBy(maxY / 2)
 	if a.Scroll.Y <= 0 || a.Scroll.Y >= maxY {
 		t.Fatalf("a half-page scroll from 0 landed at %.0f, inside neither end", a.Scroll.Y)
+	}
+}
+
+// TestProbColorIsDegenerateSafe pins probColor's zero-scale branch.
+//
+// The probability strip passes max = the largest probability in the row. If that is zero — an
+// empty row, or a distribution that underflowed to nothing — then p/max divides by zero and
+// sqrt(+Inf) saturates every cell's alpha at 255. The strip would paint every position as the
+// most likely one. Measured: deleting the `max <= 0` guard leaves the whole suite green across a
+// 355s run, because no test asks what colour a strip with no mass produces.
+//
+// The guard's answer is colFaint, which reads as "nothing to show here" rather than as a maximum.
+func TestProbColorIsDegenerateSafe(t *testing.T) {
+	for _, max := range []float32{0, -1} {
+		if got := probColor(0.5, max); got != colFaint {
+			t.Errorf("probColor(0.5, %v) = %+v, want the faint fallback %+v", max, got, colFaint)
+		}
+	}
+
+	// A real scale still ramps: zero mass is the palest, the maximum is the strongest, and
+	// nothing in between runs past either end.
+	if lo, hi := probColor(0, 1), probColor(1, 1); lo.A >= hi.A {
+		t.Fatalf("a zero probability (%v) is not paler than the maximum (%v)", lo.A, hi.A)
+	}
+	mid := probColor(0.25, 1)
+	if mid.A <= probColor(0, 1).A || mid.A >= probColor(1, 1).A {
+		t.Fatalf("a quarter probability (%v) does not sit between the ends", mid.A)
+	}
+	// Past the scale it saturates rather than wrapping.
+	if probColor(2, 1) != probColor(1, 1) {
+		t.Fatalf("a probability past the scale gets a different colour from the scale itself; "+
+			"probColor(%v) vs probColor(%v)", probColor(2, 1).A, probColor(1, 1).A)
+	}
+}
+
+// TestResidualChainRejectsAnIndexAnySliceCannotHold covers every bound residualChain checks.
+//
+// The function reads five parallel slices of the layer trace at the same (token, dim) position:
+// In, AttnProj, AfterAttn, FFNOut and AfterFFN. Its guard checks all five. Trimming it to the
+// first one — `i` and `dim` against In alone — left the whole suite green across a 366s run,
+// because the existing test asks whether the printed arithmetic closes, on traces where every
+// slice has the same shape.
+//
+// They do not have to: a truncated or partially filled trace, or a dimension beyond a narrower
+// slice, would index past the end. The test walks each slice in turn with only that one made
+// short, so trimming any single bound shows up here.
+func TestResidualChainRejectsAnIndexAnySliceCannotHold(t *testing.T) {
+	a := newTestApp(t)
+	base := a.Trace.Layers[0]
+
+	// A sane position works, so the test is not rejecting everything.
+	steps, ok := residualChain(base, 0, 0)
+	if !ok || len(steps) != 3 {
+		t.Fatalf("residualChain(base, 0, 0) = (%d steps, %v), want three steps", len(steps), ok)
+	}
+
+	// Each slice in turn gets a row shorter than its siblings, and the same position is asked
+	// for. The guard has to answer false rather than index past the end.
+	shorten := map[string]func(*model.LayerTrace){
+		"In":        func(l *model.LayerTrace) { l.In[0] = l.In[0][:1] },
+		"AttnProj":  func(l *model.LayerTrace) { l.AttnProj[0] = l.AttnProj[0][:1] },
+		"AfterAttn": func(l *model.LayerTrace) { l.AfterAttn[0] = l.AfterAttn[0][:1] },
+		"FFNOut":    func(l *model.LayerTrace) { l.FFNOut[0] = l.FFNOut[0][:1] },
+		"AfterFFN":  func(l *model.LayerTrace) { l.AfterFFN[0] = l.AfterFFN[0][:1] },
+	}
+	for name, mutate := range shorten {
+		l := base
+		l.In, l.AttnProj, l.AfterAttn, l.FFNOut, l.AfterFFN =
+			append([][]float32(nil), base.In...), append([][]float32(nil), base.AttnProj...),
+			append([][]float32(nil), base.AfterAttn...), append([][]float32(nil), base.FFNOut...),
+			append([][]float32(nil), base.AfterFFN...)
+		mutate(&l)
+		if _, ok := residualChain(l, 0, 1); ok {
+			t.Fatalf("%s has one element but the guard accepted dim 1; it would index past the end",
+				name)
+		}
+	}
+
+	// Out-of-range tokens and dims are rejected too.
+	if _, ok := residualChain(base, -1, 0); ok {
+		t.Fatal("token -1 was accepted")
+	}
+	if _, ok := residualChain(base, len(base.In), 0); ok {
+		t.Fatal("a token past the end was accepted")
+	}
+	if _, ok := residualChain(base, 0, -1); ok {
+		t.Fatal("dim -1 was accepted")
 	}
 }

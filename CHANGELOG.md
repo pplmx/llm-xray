@@ -6,6 +6,13 @@
 
 ### Added
 
+- **`probColor` 的 `max <= 0` 守卫删掉后，355 秒全量测试全绿。** 概率色带传入的 `max` 是整行里最大的概率；它若是 0，`p/max` 除零得 `+Inf`，`sqrt` 之后 alpha 被截到 255——**整条带子每一格都是最深的颜色**，看上去像每个位置都是最可能的那个
+  - 与第 44 轮 `valueColor` 同一形状：退化分支不会 panic、不会进 `Texts()`，只会在屏幕上糊成一片。新增 `TestProbColorIsDegenerateSafe`，除退化输入外还钉住「零概率比最大值淡」「四分之一值落在两者之间」「超出刻度不再变化」
+  - 破坏性验证：去掉守卫 → `probColor(0.5, 0) = {R:76 G:194 B:255 A:255}`（本该是淡色兜底）
+- **`residualChain` 同时校验五个平行切片的长度，而只保留第一个校验也没人管。** 现有测试问的是「打印出来的算式是否闭合」，用的都是所有切片等长的 trace。把它收窄成只检查 `l.In`，366 秒全量测试全绿
+  - 新增 `TestResidualChainRejectsAnIndexAnySliceCannotHold`：逐个把某一个切片截短，再用同一个位置去问，要求返回 `false` 而不是越界索引
+  - 破坏性验证四处：`AttnProj` / `AfterAttn` / `FFNOut` / `AfterFFN` 的校验各删一次，**四次全部被捕获**（以 `panic: index out of range [1] with length 1` 的形式）
+  - **一处自己的脚本错误**：第一次验证时 `AfterAttn` 和 `AfterFFN` 报 `AssertionError`——我的锚点假设每处校验都独占一行，而实际有两处连在同一行。改用正则匹配后四处才都能真正删掉并验证。**「变异没生效」和「变异被捕获」在输出上完全不同，区分它们靠的是断言而不是 grep**
 - **`scrollStageBy` 的两个夹紧都没测。** 同时删掉 `y < 0` 与 `y > MaxY` 两处，354 秒全量测试全绿——其他滚动测试检查的是「视图最终停在哪」，不是「字段有没有越出范围」。十次 PageUp 从顶部按下去，`Y` 会变成 `-4500`
   - 新增 `TestScrollStageByStaysInRange`：向上二十页必须停在 0、向下二十页必须停在 `MaxY`，再加一次半页滚动确认夹紧没有把值钉死
   - 破坏性验证：删掉上界 → `left Y at -1805`；删掉下界 → `left Y at 3609, past MaxY 1805`，各自独立

@@ -97,8 +97,16 @@ func DecodeBytes(ids []int) string {
 
 // Truncate cuts ids to the model's context window. When it has to drop bytes
 // it advances to the next UTF-8 lead byte, so a truncated prompt never starts
-// in the middle of a multi-byte character. A non-positive context window
-// yields no tokens.
+// in the middle of a multi-byte character.
+//
+// Two inputs yield no tokens at all, not just one: a non-positive context
+// window, and a window that falls entirely inside a single character. The
+// second is reachable with a small ctx and a wide rune — measured, a 4-byte
+// emoji at ctx 1, 2 or 3 returns nothing, because the cut lands on a
+// continuation byte and advancing to a lead byte consumes the whole rune. The
+// app has a status-line branch for exactly this ("提示词装不进 %d 个 token 的
+// 窗口"), since the prompt box holds text while the trace is empty. Callers
+// that treat an empty result as "no prompt" have to distinguish the two.
 func Truncate(ids []int, ctx int) []int {
 	if ctx <= 0 {
 		return nil

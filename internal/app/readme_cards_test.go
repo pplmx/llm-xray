@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -777,5 +778,52 @@ func TestAnalyticalCardCountMatchesTheDocuments(t *testing.T) {
 	if sections != n {
 		t.Fatalf("docs/cards.md has %d ## sections for %d analytical cards; the file and the app "+
 			"describe different sets", sections, n)
+	}
+}
+
+// TestLnVocabFiguresMatchTheConfig keeps the four places that quote ln(vocab) honest.
+//
+// The ceiling for uniform guessing appears as "ln 256 = 5.545" in docs/cards.md twice and in
+// stages.go's comments twice. They had drifted apart: two said 5.545 and two said 5.55, which is
+// the same number at a different precision, so a reader comparing them would wonder which the
+// code used. Neither is wrong, but a constant written in five places has no owner — the same
+// shape as the malformed-figure list three rounds ago, where two copies of one rule disagreed.
+//
+// The code already derives it: nextByteSkill.UniformReference is math.Log(float64(vocab)). What
+// this test adds is that the prose has to agree with that derivation at the precision the prose
+// uses, and that a future checkpoint with a different vocabulary cannot leave "256" behind.
+func TestLnVocabFiguresMatchTheConfig(t *testing.T) {
+	a := newTestApp(t)
+	vocab := a.W.Config.Vocab
+	want := fmt.Sprintf("%.3f", math.Log(float64(vocab)))
+	wantWithVocab := fmt.Sprintf("ln %d = %s", vocab, want)
+
+	// The model's own derivation, so the prose and the arithmetic agree by construction.
+	skill := computeNextByteSkill(a.W, a.Trace, a.Temp)
+	if got := fmt.Sprintf("%.3f", skill.UniformReference); got != want {
+		t.Fatalf("UniformReference is %s but ln(%d) is %s", got, vocab, want)
+	}
+
+	for _, name := range []string{
+		filepath.Join("..", "..", "docs", "cards.md"),
+		"stages.go",
+	} {
+		b, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		body := string(b)
+		if !strings.Contains(body, want) {
+			t.Errorf("%s quotes ln(%d) at a different value or precision; write it as %q so "+
+				"every copy agrees with math.Log(vocab)", name, vocab, wantWithVocab)
+		}
+		// The two-decimal form is the one that had drifted; forbid it explicitly, in the
+		// three shapes it appeared in.
+		for _, stale := range []string{"5.55 的天花板", "5.55-nat", "= 5.55)"} {
+			if strings.Contains(body, stale) {
+				t.Errorf("%s still carries the two-decimal form %q; the other copies say %s",
+					name, stale, want)
+			}
+		}
 	}
 }

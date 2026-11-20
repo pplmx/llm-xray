@@ -1180,7 +1180,7 @@ func (a *App) stageLogitLens(c *ui.Context) {
 		// The bar is p(final answer) at each depth, not the top-1 probability and
 		// not the entropy. Those two were the first thing drawn here and they made a
 		// chart with no information in it: this model's intermediate distributions are
-		// near one-hot (entropy 0.00 against a 5.55-nat ceiling), so every bar was a
+		// near one-hot (entropy 0.00 against a 5.545-nat ceiling), so every bar was a
 		// hairline. p(final) is the quantity that actually moves, and the one that
 		// answers the question — how much of the final answer is already here.
 		rows := make([]barRow, 0, len(lens.Rungs))

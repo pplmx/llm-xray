@@ -1068,3 +1068,35 @@ func TestReadmeDirectoryListingNamesEveryTopLevelEntry(t *testing.T) {
 		}
 	}
 }
+
+// TestReadmePlayIntervalMatchesTheConstant keeps the autoplay row's "每 1.3 秒一步" honest.
+//
+// playStepInterval is 1300ms and the README states the pace as 1.3 seconds. Measured by setting
+// the constant to 2000ms: every test in the package still passed, while the documented pace and
+// the real one had drifted apart by more than a second per step. The keyboard table is where a
+// reader decides whether to press 空格 and watch, so the number is load-bearing.
+//
+// Same derivation as the fade duration: the expected string comes from the constant, so changing
+// the code fails here with the figure it now needs rather than matching a second literal.
+func TestReadmePlayIntervalMatchesTheConstant(t *testing.T) {
+	doc := readREADME(t)
+
+	secs := playStepInterval.Seconds()
+	// One decimal place, which is the precision the README writes in.
+	want := fmt.Sprintf("%.1f 秒", secs)
+	if want != "1.3 秒" {
+		t.Fatalf("playStepInterval is %v, so the README's pace should read %q; update the "+
+			"空格 row", playStepInterval, want)
+	}
+	if !strings.Contains(doc, want) {
+		t.Fatalf("the README no longer states the autoplay pace as %q, which is what "+
+			"playStepInterval is configured to", want)
+	}
+
+	// The row also promises playback stops at the last stage rather than wrapping. That is a
+	// behaviour, not a number, and TestPlaybackStopsAtTheEnd covers it — asserted here only
+	// so removing the sentence is noticed together with the figure it sits beside.
+	if !strings.Contains(doc, "播到第 7 步停止") {
+		t.Error("the README's autoplay row no longer says playback stops at the last stage")
+	}
+}

@@ -659,6 +659,13 @@
 
 ### Fixed
 
+- **README 说自动播放「每 1.3 秒一步」，而 `playStepInterval` 改成多少都没有测试会红。** 实测把常量从 1300ms 改成 2000ms，整个包照样全绿——文档写的节奏与实际节奏每步差 0.7 秒，而 README 那张键盘表正是读者决定「要不要按空格看一遍」的地方，这个数是有分量的
+  - 新增 `TestReadmePlayIntervalMatchesTheConstant`，用与上一轮淡入时长**同一种派生方式**：期望串由 `playStepInterval.Seconds()` 拼出，常量一改就报出「现在该写成多少」，而不是再对一份字面量
+  - 顺带把同一行承诺的行为（「播到第 7 步停止」）也纳入检查，并指向真正覆盖它的 `TestPlaybackStopsAtTheEnd`
+  - 破坏性验证：常量改 2000ms → 报 `playStepInterval is 2s`；README 去掉节奏 → 报 `no longer states the autoplay pace as "1.3 秒"`；去掉「播到第 7 步停止」→ 单独报红
+  - **一处自己的错写进注释前先核实了**：初稿引用 `TestPlaybackStopsAtTheLastStage`，实际函数叫 `TestPlaybackStopsAtTheEnd`。**引用测试名和引用数字一样会写错**，所以先 grep 再落笔
+  - **一次「验证脚本比被测代码更容易出错」**：README 那条变异第一次跑出来没有输出，我差点当成守卫没生效，实际是 grep 的引号写错把结果吞了。重跑后确认变异真的落盘（`grep -c '1.3 秒'` 归零）且确实报红
+  - 顺带核了 README 操作表里其余数字：`第 3–6 步` / `第 3–4 步` / `第 7 步` 由 `TestReadmeStageRangesMatchTheControls` 从常量派生、`1–7` 由 `TestAdvertisedShortcutsDoWhatTheLineSays` 盯着、`1180` 有窗口下限守卫
 - **同一个 160ms 写在两份文档里，守卫只读了一份。** `stageFade.Duration` 是 160ms，README 的动效段落和 `docs/keys.md` 的「切换阶段时的淡入」各写了一遍，而 `TestReadmeFadeDurationMatchesTheTransition` 只打开 README
   - 于是改 `stageFade.Duration` 时两份文档都不会动，而只有一份会在下一次有人去读它时被发现——**守卫覆盖了两份拷贝里的一份**，这正是这个仓库反复出现的形态（tooltip 计数、截图张数、常见误解分布）
   - 判据也一并改成**从代码派生**：原来把 `160` 同时写在断言和搜索串里，代码与两份文档一起改到别的数时仍会通过。现在期望值由 `stageFade.Duration.Milliseconds()` 拼出，代码先自己核对「你改了时长，两份文档该跟着改」，再逐份检查

@@ -2,6 +2,8 @@ package app
 
 import (
 	"math"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -223,4 +225,92 @@ func TestAgreeNoteNamesAllThreeCases(t *testing.T) {
 		}
 		seen[got] = c.name
 	}
+}
+
+// TestUTF8PayloadChainStripsThePrefixBits pins the arithmetic the "一个汉字三个 token" card
+// shows.
+//
+// The card prints "还原码点：(04<<12) + (38<<6) + 2D → U+4E2D". Those numbers are the bytes with
+// their UTF-8 prefix bits removed: E4 → 04, B8 → 38, AD → 2D. Printing the raw bytes instead —
+// (E4<<12) + (B8<<6) + AD — does not reconstruct U+4E2D at all, so the card would stop
+// demonstrating the thing it exists to demonstrate.
+//
+// Measured: replacing utf8Payload(b) with the bare b in both branches left the whole suite green
+// across a 365s run. Nothing checks this string.
+func TestUTF8PayloadChainStripsThePrefixBits(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		// 2-, 3- and 4-byte sequences, plus the single-byte case the prefix table handles
+		// with a zero shift (so the term prints without a << at all).
+		{"a", "61"},
+		{"é", "(03<<6) + 29"},                       // C3 A9
+		{"中", "(04<<12) + (38<<6) + 2D"},            // E4 B8 AD
+		{"𝄞", "(00<<18) + (1D<<12) + (04<<6) + 1E"}, // F0 9D 84 9E
+	}
+	for _, c := range cases {
+		if got := utf8PayloadChain([]byte(c.in)); got != c.want {
+			t.Errorf("utf8PayloadChain(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+
+	// The empty and unsupported lengths answer empty rather than a partial sum.
+	for _, bs := range [][]byte{nil, {}, {0x41, 0x42, 0x43, 0x44, 0x45}} {
+		if got := utf8PayloadChain(bs); got != "" {
+			t.Errorf("utf8PayloadChain(% X) = %q, want empty", bs, got)
+		}
+	}
+
+	// And the property the card actually relies on: evaluating the chain reproduces the
+	// codepoint. Parsing the printed expression back is the only way to state that without
+	// re-deriving the same payload arithmetic in the test, which would test nothing.
+	for _, s := range []string{"a", "é", "中", "𝄞"} {
+		var want rune
+		for _, r := range s {
+			want = r
+		}
+		chain := utf8PayloadChain([]byte(s))
+		sum := evaluatePayloadChain(t, chain)
+		if sum != want {
+			t.Fatalf("the chain printed for %q evaluates to %U, want %U", s, sum, want)
+		}
+	}
+}
+
+// evaluatePayloadChain parses a chain like "(04<<12) + (38<<6) + 2D" back into a rune.
+//
+// It is deliberately a small, independent parser rather than a copy of the production
+// arithmetic: if the two agreed because they shared code, the test would only prove that the
+// shared code runs.
+func evaluatePayloadChain(t *testing.T, chain string) rune {
+	t.Helper()
+	var sum int
+	for _, term := range strings.Split(chain, " + ") {
+		term = strings.TrimSpace(term)
+		if term == "" {
+			t.Fatalf("empty term in chain %q", chain)
+		}
+		shift := 0
+		if i := strings.Index(term, "<<"); i >= 0 {
+			hexPart := strings.Trim(term[:i], "(")
+			s, err := strconv.Atoi(term[i+2 : len(term)-1])
+			if err != nil {
+				t.Fatalf("cannot read the shift in %q: %v", term, err)
+			}
+			shift = s
+			v, err := strconv.ParseInt(hexPart, 16, 32)
+			if err != nil {
+				t.Fatalf("cannot read the hex in %q: %v", term, err)
+			}
+			sum += int(v) << shift
+			continue
+		}
+		v, err := strconv.ParseInt(term, 16, 32)
+		if err != nil {
+			t.Fatalf("cannot read the hex in %q: %v", term, err)
+		}
+		sum += int(v) << shift
+	}
+	return rune(sum)
 }

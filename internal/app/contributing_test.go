@@ -218,10 +218,21 @@ func TestContributingCountsEveryTooltip(t *testing.T) {
 
 	// The guide spells the count in Chinese numerals up to ten.
 	cn := [...]string{"零", "一", "两", "三", "四", "五", "六", "七", "八", "九", "十"}
-	if strings.Contains(doc, cn[n]) && strings.Contains(doc, cn[n]+"处") {
-		return
+	if !strings.Contains(doc, cn[n]) || !strings.Contains(doc, cn[n]+"处") {
+		t.Fatalf("there are %d tooltips (%s处) but the guide does not say so", n, cn[n])
 	}
-	t.Fatalf("there are %d tooltips (%s处) but the guide does not say so", n, cn[n])
+
+	// And it has to say that the count is of call sites, not of tooltips on screen. The
+	// paragraph used to read "界面上有九处 .Tooltip(...)" and then, one clause later, "这个数会随
+	// 状态变化" — which contradicts the number it just gave. Three of the nine are in loops or
+	// inside controlGroup, which is itself called three times, so the number of elements that
+	// carry a tooltip runs into the dozens and changes with the stage. A reader who took nine
+	// as "nine things to check by eye" would check a fraction of them.
+	if !strings.Contains(doc, "不等于界面上 tooltip 的个数") {
+		t.Fatal("the guide states the call-site count without saying that the number of " +
+			"tooltips on screen is different; three call sites are in loops or shared by three " +
+			"controls, so 9 call sites do not mean 9 tooltips")
+	}
 }
 
 // TestContributingFocusTableMatchesTheApp measures the Tab cycle and compares it to the table.

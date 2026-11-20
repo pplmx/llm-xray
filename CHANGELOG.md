@@ -693,6 +693,12 @@
 
 ### Fixed
 
+- **「界面上有九处 `.Tooltip(...)`」把调用点数说成了元素数，下一个分句却自己承认这个数会变。** 源码里确实有九个 `.Tooltip(` 调用点，但其中两处在循环里（卡片索引的每个 chip、侧栏每行），还有一处在 `controlGroup` 里——而 `controlGroup` 被调用了三次（层、头、温度）。所以真正挂在元素上的 tooltip 是几十个，随阶段和状态变化
+  - 后果是读者按「九处」去逐条目视核对，实际只核对了其中一小部分。而这一节的存在意义正是「哪些东西不能只信绿灯」
+  - 文档改成「九处调用点，但这九处不等于界面上 tooltip 的个数」，并说明那三个的来源
+  - 守卫 `TestContributingCountsEveryTooltip` 再加一条：**文档必须写明调用点数与元素数不同**。原守卫只核对「九处」这个数字，数字对而含义错时它不会说话
+  - 破坏性验证两例：删掉那句澄清 → 报 `states the call-site count without saying that the number of tooltips on screen is different`；在 `theme.go` 加第十个 `.Tooltip(` → 报 `there are 10 tooltips (十处) but the guide…`
+  - **一处自己的变异写错**：第一次想验证第十个调用点，写的是 `_ = chip.Tooltip`——那是取值不是调用，`strings.Count` 没变。改成真正的 `ui.Text(c, "").Tooltip("probe")` 才生效
 - **CONTRIBUTING 说「横向溢出只能靠截图核对」，而旁边就有一个 `TestNoHorizontalClipping`。** 两句话都不假，放在一起却会让人以为已经有测试在管这件事
   - 实测分清了：往阶段卡片里注入 200 个字符的 `NoWrap()` 文本，`TestNoHorizontalClipping` **仍然通过**——因为 `Find` 报的是容器宽度（同一容器里放「短」和 40 遍「很长的文本」，报出的宽度都是 200）
   - 两者管的是不同的错误：**盒子摆出窗口**是布局错误（该测试抓得到），**文字在容器内被裁掉**是排版错误（只有截图能看出来）。文档现在把这条界线写明

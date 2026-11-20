@@ -211,21 +211,55 @@ func TestShapeChipsJumpToTheirStage(t *testing.T) {
 	}
 }
 
-// TestShapeChipsListEveryStage checks the card names all seven stages in order.
-// A missing row would be a stage the reader cannot reach from here.
+// TestShapeChipsListEveryStage checks the card draws one chip per stage, and that each chip
+// carries the shape that stage actually produces.
+//
+// Two earlier versions of this test could not fail. The first collected every string in the frame
+// into one set and asked whether each stage name appeared anywhere in it — but 分词, Softmax and
+// FFN are also printed by the sidebar, the stage header and the status line, so renaming the
+// card's own chip (measured: 分词 to 分词化) left it green. The second tried to filter by the
+// card's position, which Texts() does not report; Find returns only the first match in the frame,
+// and for five of the seven names that first match is the sidebar.
+//
+// What is actually unique to the card is the shape column: [36], [36, 36], [36, 384] and [1, 256]
+// each appear exactly once in the frame, and nowhere else in the app. Anchoring on them means the
+// assertion is about the card rather than about the window.
 func TestShapeChipsListEveryStage(t *testing.T) {
 	a := newTestApp(t)
 	a.Step = 0
-	tr := ui.NewTester(a.View, 1500, 940)
+	tr := ui.NewTester(a.View, 1500, 1500)
 	tr.Frame()
-	seen := map[string]bool{}
-	for _, s := range tr.Texts() {
-		seen[s] = true
+
+	T, d, dff, vocab := len(a.Trace.Tokens), a.W.Config.DModel, a.W.Config.DFF, a.W.Config.Vocab
+	// One shape per stage, in the order the lesson teaches them. The repeated [T, d] entries are
+	// stages 2, 3 and 5; the shapes alone cannot tell those three apart, so the count is asserted
+	// as well.
+	shapes := []struct {
+		shape string
+		want  int
+	}{
+		{fmt.Sprintf("[%d]", T), 1},
+		{fmt.Sprintf("[%d, %d]", T, d), 3},
+		{fmt.Sprintf("[%d, %d]", T, T), 1},
+		{fmt.Sprintf("[%d, %d]", T, dff), 1},
+		{fmt.Sprintf("[1, %d]", vocab), 1},
 	}
-	for _, name := range []string{"分词", "嵌入", "注意力", "Softmax", "残差 / LN", "FFN", "输出"} {
-		if !seen[name] {
-			t.Fatalf("the shape card does not list %q", name)
+	seen := map[string]int{}
+	for _, s := range tr.Texts() {
+		seen[s]++
+	}
+	for _, sh := range shapes {
+		if got := seen[sh.shape]; got != sh.want {
+			t.Fatalf("the shape card draws %q %d time(s), want %d; the card's rows are the only "+
+				"place these shapes appear", sh.shape, got, sh.want)
 		}
+	}
+
+	// And the chips have to be reachable: the card claims "点击任意阶段跳转", and
+	// TestShapeChipsJumpToTheirStage covers the click. Asserting the heading here keeps this
+	// test meaningful if the card is ever moved behind a condition.
+	if _, ok := tr.Find("数据流与形状"); !ok {
+		t.Fatal("the shape card is not rendered on stage 1")
 	}
 }
 

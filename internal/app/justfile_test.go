@@ -495,3 +495,44 @@ func TestEveryRecipeDescriptionIsOneLine(t *testing.T) {
 			strings.Join(bad, "\n  "))
 	}
 }
+
+// TestGitignoreCoversTheLocalBuildOutput keeps `go build .` from leaving an untracked binary.
+//
+// The repository was renamed from llmlab to llm-xray: go.mod's module line, the sidebar title,
+// mygo.json's name and slug, and every import path. .gitignore kept ignoring "/llm-lab", which
+// after the rename matches nothing — so the binary that `go build .` writes into the
+// repository root appeared as an untracked file, one `git add -A` away from being committed. The
+// ignore rule had been correct and simply outlived the name it named, which is the failure mode a
+// hand-maintained path list has and a derived one does not.
+//
+// The name is read out of go.mod rather than listed here, so the next rename moves both.
+func TestGitignoreCoversTheLocalBuildOutput(t *testing.T) {
+	root := filepath.Join("..", "..")
+
+	mod, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatalf("read go.mod: %v", err)
+	}
+	m := regexp.MustCompile(`(?m)^module\s+(\S+)$`).FindSubmatch(mod)
+	if m == nil {
+		t.Fatal("go.mod has no module line; this test cannot tell what the binary is called")
+	}
+	module := string(m[1])
+
+	// `go build .` in the module root writes the executable under the last path element of the
+	// module path.
+	binary := module
+	if i := strings.LastIndex(module, "/"); i >= 0 {
+		binary = module[i+1:]
+	}
+
+	gitignore, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+	want := "/" + binary
+	if !strings.Contains(string(gitignore), want) {
+		t.Fatalf(".gitignore does not ignore %q, the file `go build .` writes into the repository "+
+			"root from module %q; the built binary would show up as untracked", want, module)
+	}
+}

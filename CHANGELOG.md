@@ -638,6 +638,21 @@
 
 ### Fixed
 
+- **上一轮那次改名留下两处旧名字，其中一处的后果是可执行文件变成未跟踪文件。** `go build .` 在仓库根写出以模块名命名的可执行文件，改名之后它叫 `llm-xray`，而 `.gitignore` 里还写着 `/llm-lab`——匹配不到任何东西，于是 `git status` 里多出一个未跟踪的二进制，离一次 `git add -A` 只差一步
+  - `tools/train.py` 的文档字符串也还写着「Train the toy GPT that LLM Lab visualizes」，而 README、侧栏标题、`mygo.json` 都已是 llm-xray
+  - 新增 `TestGitignoreCoversTheLocalBuildOutput`：**从 `go.mod` 的 module 行读出名字**再要求 `.gitignore` 忽略它，所以下次改名两边一起动。破坏性验证：把规则改回 `/llm-lab` → 报 `does not ignore "/llm-xray" ... the binary would show up as untracked`
+  - 这条规则写对过一次。它坏掉不是因为它错了，而是**它点名的那个名字没了**——手写路径清单的典型失效方式，所以守卫改成派生的
+- **`docs/keys.md` 点了一个不存在的测试。** 它说卡片索引行的显示规则由 `TestReadmeCardIndexRowMatchesTheStages` 看着，而这个拼写在两个包里都没有过——真正管这条的是 `TestCardRowIsHiddenOnSingleCardStages`
+  - 根因不在这一行，在于**守卫只扫了 CONTRIBUTING.md 一个文件**。`TestContributingNamesRealTests` 本来就在做这件事，但它把「文档」写成了「指南」，于是另外五份文档（README、SECURITY、`docs/` 下三份）从来没被检查过，而其中一份已经坏了
+  - 改成 `TestDocsNameRealTests`，扫描全部在用的散文文件。**CHANGELOG 排除在外**：它是每一轮做了什么、量到了什么的记录，里面点名的测试按当时的拼写才算如实；要求历史与现在一致等于每次改名都去重写记录
+  - 正则加了 `\b` 前界——不加时它把 `newTestApp` 里的 `TestApp` 也当成被引用的测试名，报了一个假的红
+  - 破坏性验证：把 `keys.md` 里那个名字改回旧拼写 → `keys.md cites TestReadmeCardIndexRowMatchesTheStages, which no longer exist`
+- **顺带扫了 Go 源码注释里点的测试名，`stages.go` 有一处过期**：注释说「`TestDataColoursStayOutOfText` 会抓到」，实际函数早已叫 `TestDataColoursAreNotUsedOnText`。已改。其余四处命中是折行的名字（`TestCausalToleranceSeparatesNoise` / `FromDefects`）与两份**刻意保留的历史记录**（`TestHeadControlIsNotTabReachable`、`TestTooltipsAppearAndMatchTheirWidget` 的注释正是写「这条取代了那个错的结论」），没有改
+- **CONTRIBUTING 的页面长度是三个没有主人的数字，而且已经偏小。** 它写着「1180×720 下第 5 步已经要滚 4.4 屏、第 4 步 3.3 屏、第 3 步 2.9 屏」——在写下的那个提交（`f0cbee9`）实测是 4.39 / 3.34 / 2.93，当时是准的；现在同一测量是 4.55 / **4.21** / 3.03，残差阶段长了近一屏，于是这句话开始**低估**最长的一步
+  - **还有一个更要紧的歧义**：「一屏」一直没说是哪个屏。阶段栏自己的滚动视口是 509 DIP，比 720 的窗口矮一截，用窗口算同一份内容少报约三成（4.55 → 3.21）
+  - 改成陈述性质而非三个快照：最高的一步**四屏以上**，并写明一屏是阶段栏的视口。与这个仓库上一次的修法一致——「举例子比下结论更容易过期」。**写成比值不写 DIP**：那一栏的高度是字体的像素，本仓库已实测同一布局在四台机器上是 1742–1885 DIP
+  - 新增 `TestContributingPageLengthMatchesTheLayout`：重新量这条、检查单位那句话还在、并**验证单位本身成立**（阶段栏确实比窗口矮，且矮到「少报三成」这个说法站得住）。四种破坏性验证：改成「八屏以上」、删掉单位说明、把阈值抬到 40、**让守卫改用窗口高去算**——最后这个报 `stage 5 measures 3.21 screens`，正是这句话想避免的那个偏小的数
+- **一次验证：`just check` 全绿**（gofmt 无输出 / vet 通过 / `go test ./...` 两个包都 ok）。本轮新增三条守卫都做了破坏性验证，都不是空转。不记秒数——这台机器的 `load average` 长期在 50 以上，同一条命令的耗时能差两三倍，写下来会变成一个没人维护的假数字
 - **一次全量审计：本轮没有找到新的「写死数字」缺陷。** 前几轮各修过一个「量了一次就当成对所有提示词都成立」的散文断言（第 15 轮 logit lens 的 92/180、第 24 轮损失曲线的最低点、以及嵌入结构的那个数），所以这轮系统地扫了两处最大的手写散文中转站：各阶段的 lesson 正文、以及所有「数字逐字不变」的长句
   - 扫描方法：在 2 token 与 36 token 两个提示词下渲染全部七个阶段，取出所有超过 60 字的长句，比对哪些逐字相同；再单独检查 lesson 正文里每组数字
   - 结果：**九条含数字的逐字不变长句全部是合理常量**（架构常量 256/96/384、快捷键说明、float32 精度说明、以及描述方法而非描述数据的引导句）

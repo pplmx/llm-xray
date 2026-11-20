@@ -2605,7 +2605,7 @@ func (a *App) skillBreakdownLine(c *ui.Context, tr *model.Trace, skill nextByteS
 	}
 	// Text colours, not data colours. colGreen means "a value in a chart" everywhere
 	// else in this app, and a prose label wearing it reads as a plotted value;
-	// TestDataColoursStayOutOfText enforces that, and it caught this.
+	// TestDataColoursAreNotUsedOnText enforces that, and it caught this.
 	ui.Row(c).Gap(16).Wrap().AlignItems(ui.Center).Children(func() {
 		ui.Text(c, "前一个是空格（词边界）"+pct(b.AfterSpaceHits, b.AfterSpaceRows)).
 			FontSize(fontMicro).TextColor(colMuted)

@@ -11,19 +11,50 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// TestContributingNamesRealTests keeps the contributor guide from citing tests
-// that no longer exist. The guide was written after several rounds of fixing
-// "the number does not support the sentence" defects and points at the tests that
-// lock each one down; a rename would leave a reader hunting for names that are
-// gone.
-func TestContributingNamesRealTests(t *testing.T) {
-	doc, err := os.ReadFile(filepath.Join("..", "..", "CONTRIBUTING.md"))
+// TestDocsNameRealTests keeps the documentation from citing tests that no longer exist.
+//
+// The guide was written after several rounds of fixing "the number does not support the
+// sentence" defects and points at the tests that lock each one down; a rename would leave a
+// reader hunting for names that are gone.
+//
+// It scans every prose file, not just CONTRIBUTING. The check used to read CONTRIBUTING alone,
+// and docs/keys.md had meanwhile come to cite `TestReadmeCardIndexRowMatchesTheStages` — a name
+// that never existed under that spelling in either package. A guard over one of six documents
+// reports on one of six documents; the other five were free to rot, and one had.
+//
+// CHANGELOG.md is deliberately excluded. It is a record of what each round measured and changed,
+// so it names tests as they were spelled when the round was written — `TestDataColoursStayOutOfText`
+// became `TestDataColoursAreNotUsedOnText` later, and the entry describing the original defect is
+// still correct about what happened. Requiring history to match the present would mean rewriting
+// the record every time a test is renamed, which is the opposite of what it is for. The live
+// documents are the ones that have to be true now.
+func TestDocsNameRealTests(t *testing.T) {
+	root := filepath.Join("..", "..")
+	docs, err := filepath.Glob(filepath.Join(root, "*.md"))
 	if err != nil {
-		t.Fatalf("read CONTRIBUTING.md: %v", err)
+		t.Fatal(err)
 	}
-	text := string(doc)
+	more, err := filepath.Glob(filepath.Join(root, "docs", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range more {
+		docs = append(docs, path)
+	}
+	// Drop the changelog, for the reason in the comment above.
+	live := docs[:0]
+	for _, path := range docs {
+		if filepath.Base(path) == "CHANGELOG.md" {
+			continue
+		}
+		live = append(live, path)
+	}
+	docs = live
+	if len(docs) < 5 {
+		t.Fatalf("only %d live prose files found; the globs no longer cover the documentation", len(docs))
+	}
 
-	// Every TestXxx the guide mentions must exist in this package or in model.
+	// Every TestXxx a document mentions must exist in this package or in model.
 	sources, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
@@ -40,22 +71,48 @@ func TestContributingNamesRealTests(t *testing.T) {
 	}
 	declared := all.String()
 
-	// Every TestXxx the guide names, without guessing at suffixes: the point is
-	// to catch renames, and a pattern that only matches certain endings would
-	// silently skip most of them.
-	re := regexp.MustCompile(`Test[A-Z][A-Za-z0-9]*`)
-	named := map[string]bool{}
-	for _, m := range re.FindAllString(text, -1) {
-		named[m] = true
+	// Every TestXxx the documents name, without guessing at suffixes: the point is to catch
+	// renames, and a pattern that only matched certain endings would silently skip most of them.
+	//
+	// The leading \b is load-bearing. Without it the pattern also matches the "TestApp" inside
+	// "newTestApp", which is a helper rather than a test, and the guard reports a dangling name
+	// for a call that is entirely fine.
+	re := regexp.MustCompile(`\bTest[A-Z][A-Za-z0-9]*`)
+
+	named, citations := map[string]bool{}, 0
+	for _, path := range docs {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		for _, m := range re.FindAllString(string(b), -1) {
+			named[m] = true
+			citations++
+		}
 	}
-	if len(named) == 0 {
-		t.Fatal("the guide names no tests; this test is no longer checking anything")
+	if citations == 0 {
+		t.Fatal("the documentation names no tests; this test is no longer checking anything")
 	}
 	for name := range named {
 		if !strings.Contains(declared, "func "+name+"(") {
-			t.Fatalf("CONTRIBUTING.md cites %s, which no longer exists", name)
+			t.Fatalf("%s cites %s, which no longer exists", docCiting(t, docs, name), name)
 		}
 	}
+}
+
+// docCiting returns the file that names test, for the failure message.
+func docCiting(t *testing.T, docs []string, name string) string {
+	t.Helper()
+	for _, path := range docs {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(b), name) {
+			return filepath.Base(path)
+		}
+	}
+	return "the documentation"
 }
 
 // TestContributingCoversTheTeachingChecks checks the guide still carries the
@@ -462,5 +519,88 @@ func TestContributingTestCountStaysAboveItsStatedBound(t *testing.T) {
 	if n <= bound {
 		t.Fatalf("the guide says 五百多个测试函数, but this package has %d; either tests were "+
 			"removed or the sentence needs correcting", n)
+	}
+}
+
+// TestContributingPageLengthMatchesTheLayout keeps the guide's page-length claim honest.
+//
+// The guide justifies scrolling with how long a stage is, and it stated the length as a per-stage
+// table: "第 5 步已经要滚 4.4 屏、第 4 步 3.3 屏、第 3 步 2.9 屏". Those were measured when they
+// were written — re-measured at the commit that added them, f0cbee9, the layout gave 4.39 / 3.34 /
+// 2.93 screens — and were still true then. At HEAD the same measurement gives 4.55 / 4.21 / 3.03:
+// the residual stage grew by a screen, so the sentence now understates the tallest stage and the
+// reader deciding whether to run the full gate is told the wrong amount.
+//
+// Three per-stage figures in prose are three numbers with no owner, and this repository has had
+// exactly that defect before (the "870 DIP" overflow claim, the "第 6 步只有一张卡片" example).
+// The sentence therefore states a property instead — the tallest stage is past four screens — and
+// this guard re-derives it. A stage that shrinks below four screens has to change the sentence;
+// a stage that grows does not, which is the direction that actually happens.
+//
+// The screen is the stage column's own scroll viewport, not the window: the column is shorter than
+// the window by the header, the token rail and the step bar, and measuring against the window
+// reports about three quarters of the true figure for the same frames — which would let the
+// sentence overstate the case while this guard stayed green. The viewport's exact height is a
+// pixel measurement that moves with the font, so the guard asserts the ratio rather than a number.
+func TestContributingPageLengthMatchesTheLayout(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "CONTRIBUTING.md"))
+	if err != nil {
+		t.Fatalf("read CONTRIBUTING.md: %v", err)
+	}
+	doc := string(b)
+
+	const claim = "四屏以上"
+	if !strings.Contains(doc, claim) {
+		t.Fatal("the guide no longer states the page length as a property (" + claim + "); " +
+			"update this test with the sentence you wrote")
+	}
+	// The unit is part of the claim. The same content is more screens of the column than of the
+	// window, so a reader who assumed the window would undershoot every figure in the paragraph.
+	if !strings.Contains(doc, "阶段栏自己的滚动视口") {
+		t.Fatal("the guide states the length in screens without saying which viewport a screen " +
+			"is; the stage column is shorter than the window, and using the window undercounts " +
+			"the same content by about a third")
+	}
+
+	tallest, tallestStep, viewport := float64(0), 0, float64(0)
+	for step := 0; step < 7; step++ {
+		a := newTestApp(t)
+		a.Step = step
+		tr := ui.NewTester(a.View, 1180, 720)
+		tr.Frame()
+		if a.StageViewportH <= 0 {
+			t.Fatalf("stage %d reports a viewport of %.0f DIP; nothing was measured",
+				step+1, a.StageViewportH)
+		}
+		screens := float64(a.Scroll.MaxY+a.StageViewportH) / float64(a.StageViewportH)
+		if screens > tallest {
+			tallest, tallestStep, viewport = screens, step+1, float64(a.StageViewportH)
+		}
+	}
+	// The unit has to be the column, not the window. Both halves are checked because the
+	// difference is what the sentence's "not the whole window" clause claims: the column is
+	// shorter, so the same content is more screens than it looks like from the window.
+	if viewport >= 720 {
+		t.Fatalf("the stage column measures %.0f DIP at 1180×720, which is not shorter than the "+
+			"window; the guide's distinction between the two no longer holds", viewport)
+	}
+	// "About a third" is the sentence's wording: the window-based figure has to undercount
+	// enough to matter, or the parenthetical is noise a reader will skip.
+	if got := float64(viewport) / 720; got < 0.5 || got > 0.85 {
+		t.Fatalf("the stage column is %.0f%% of the window height; the guide says measuring "+
+			"against the window undercounts by about a third, so update that clause",
+			100*got)
+	}
+	if tallest < 4 {
+		t.Fatalf("the guide says the tallest stage scrolls more than four screens, but stage %d "+
+			"measures %.2f screens (%.0f DIP of content in a %.0f DIP viewport) — either the "+
+			"stages got shorter or the sentence overstates the case",
+			tallestStep, tallest, tallest*viewport, viewport)
+	}
+	// The top of the claim has to be real too. A stage that doubles in length makes "four
+	// screens" as misleading in the other direction, and this repository's stages grow.
+	if tallest > 8 {
+		t.Fatalf("the tallest stage (stage %d) measures %.2f screens, far past the four the "+
+			"guide states; update the sentence", tallestStep, tallest)
 	}
 }

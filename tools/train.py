@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train the toy GPT that LLM Lab visualizes and export it as weights.json.
+"""Train the toy GPT that llm-xray visualizes and export it as weights.json.
 
 The model here is byte-level and deliberately tiny (2 layers, 96 wide, 4 heads)
 so that the Go implementation can redo the whole forward pass on every

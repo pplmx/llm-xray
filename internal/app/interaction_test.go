@@ -1958,3 +1958,43 @@ func TestHeatmapCanBeScrolledFullyIntoView(t *testing.T) {
 		}
 	}
 }
+
+// TestEscapeClearsAllThreeStatesAtOnce covers the promise in docs/keys.md's "Esc 为什么一次清三个
+// 状态" and in the README's key table: one press stops playback, releases the pinned heatmap cell
+// and releases the pinned per-position prediction.
+//
+// The three are already covered separately — TestClickPinnedCellUnpins presses Esc with a cell
+// pinned and checks Playing stays untouched, and the per-position strip has its own release test.
+// What none of them does is set all three at once, which is the part the sentence is about: "一次
+// 清三个" is a claim about a single keypress, and three tests each clearing one state would pass
+// with the handler returning after the first.
+//
+// The gap is real and was measured. Deleting only the `a.PredSel = -1` line from the Esc branch of
+// handleKeys leaves TestClickPinnedCellUnpins green — it checks the cell and playback but never the
+// prediction — while this test fails on the prediction. Deleting the cell line fails both, so the
+// prediction is the part that only this test covers.
+func TestEscapeClearsAllThreeStatesAtOnce(t *testing.T) {
+	a := newTestApp(t)
+	a.Step = 6 // the stage that draws the per-position strip
+	tr := ui.NewTester(a.View, 1500, 940)
+	tr.Frame()
+
+	// Put every one of the three into the state Esc is supposed to clear.
+	a.Playing = true
+	a.KeyQ, a.KeyK = 12, 7
+	a.PredSel = 3
+	tr.Frame()
+
+	tr.Key(0, ui.KeyEscape)
+	tr.Frame()
+
+	if a.Playing {
+		t.Error("Esc left playback running")
+	}
+	if a.KeyQ >= 0 || a.KeyK >= 0 {
+		t.Errorf("Esc left the heatmap cell pinned at (%d,%d)", a.KeyQ, a.KeyK)
+	}
+	if a.PredSel >= 0 {
+		t.Errorf("Esc left the per-position prediction pinned at %d", a.PredSel)
+	}
+}

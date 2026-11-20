@@ -6,6 +6,11 @@
 
 ### Added
 
+- **README 与 `docs/keys.md` 都承诺 `Esc`「一次清三个状态」，而三个状态里有一个从没被**同一次按键**验证过。** `handleKeys` 的 Esc 分支是三行：`stopPlayback()`、清掉固定的热力图格子、清掉固定的逐位置预测
+  - 现状不是没测，而是**分头测**：`TestClickPinnedCellUnpins` 按 Esc 时检查了格子和播放状态，逐位置色带另有自己的释放测试。**三个测试各清一个，不等于测了「一次清三个」**——一个在清完第一个就 return 的实现能让三条全绿
+  - 新增 `TestEscapeClearsAllThreeStatesAtOnce`：先把三个状态都置成「已固定」，再按一次 Esc，要求三者同时归零
+  - **隔离实验证明它不是重复覆盖**：只删掉 `a.PredSel = -1` 那一行（保留另外两个）→ `TestClickPinnedCellUnpins` **通过**（它压根不看 `PredSel`），新测试**失败**。删掉格子那一行则两条都红。所以逐位置预测正是只有新测试守着的那一块
+  - **一处自己编造的名字**：初稿注释写「让 `clearThreeStates` 提前返回」，而这个函数**不存在**——Esc 的三行是内联在 `handleKeys` 里的。与第 15 轮（引用不存在的测试名）同一个毛病，已改为直接描述那三行
 - **README 的「七个阶段与代码的对应关系」表逐项核过：16 个函数名与 14 个结构体字段全部真实存在**，这张表今天是对的
   - 但它是 README 里最容易被相信、又最容易过期的部分——读者照着某一行去 `tokenizer.go` 找 `Tokenize`、去 `workings.go` 找 `computeHeadProfiles`，而其它 README 测试读的都是行为描述，没有一条会碰标识符
   - 新增 `TestReadmeStageTableNamesRealSymbols`：把表里每个反引号标识符抽出来，要求它被声明为函数、类型或结构体字段三者之一（`copy` 是语言内建，单独放行）

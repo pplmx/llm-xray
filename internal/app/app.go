@@ -383,8 +383,16 @@ func (a *App) hasMatrix() bool {
 }
 
 // stepCell moves the keyboard's attention cell by (dq, dk). Only the stages
-// that draw a heatmap have cells; elsewhere the keys do nothing, which is why
-// the caller gates on the same range the strip's q/k marks use.
+// that draw a heatmap have cells; elsewhere the keys do nothing.
+//
+// The stage and empty-trace guards here duplicate what every caller already
+// checks: all four call sites are inside `if a.hasMatrix()`, and hasMatrix is
+// false outside stages 3-4 and when the trace has no tokens. Measured — deleting
+// the `a.Step < 2 || a.Step > 3` guard leaves the whole suite green, because no
+// path reaches it. They are kept as defence for a future caller that does not
+// gate first, but do not read them as protection the current dispatch lacks:
+// removing the `hasMatrix()` check at a call site would not be caught by these,
+// and would need its own test.
 //
 // The cell never leaves the causal triangle: the first press enters from
 // wherever the pointer last hovered, or from the selected query's own row, and

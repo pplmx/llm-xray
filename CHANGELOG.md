@@ -6,6 +6,12 @@
 
 ### Added
 
+- **量了一次跨包覆盖率，作为「还有哪里没人看」的依据。** `go test ./... -coverpkg=./...` 合并后 **95.0%**；结论是这套测试没有明显的裸奔区
+  - 单独跑 `./internal/model` 时 `LogitLens` / `Softmax` / `Entropy` 显示 0.0%，但那是**跨包调用不计入单包覆盖**造成的假象——三者在 app 的代码与测试里都被大量使用（`Entropy` 在 app 测试里 12 处）。用 `-coverpkg=./...` 合并后就都不为 0
+  - 合并后仍是 0.0% 的只有两个：`main`（`package main`，测试无法链接，已有多条源码级守卫替代）与 `LessonNames`（只被 `main.go` 调用，有 `TestMainValidatesStep` 检查 main.go 是否用它）
+  - 部分覆盖里最低的几个是 `sampleDraw` 64%、`cancellation` 50%、`layer` 62.5%，未覆盖的都是**防御性回退分支**（空 probs、浮点累加恰好落在 x 之下、越界时取最后一层），触发它们需要构造不存在的状态。按第 4 轮那条判据——**测不可达路径的守卫仍有价值，但要在注释里说清边界**——这几处选择留白并在此记录，而不是为了数字好看去凑
+  - **顺带核了 CONTRIBUTING「`-race` 跑 `internal/app` 要 11 分钟」这条**：抽三个测试在 `-race` 下跑 6.57 秒，按五百多个测试外推确实在十分钟量级，该说法仍然成立，未改
+- **一次扫描器自己出错，记下来。** 我先写了个脚本统计「导出函数在测试里的引用数」，它只扫了 `internal/model/*_test.go`，于是报告 `DHead` / `LogitLens` / `Softmax` / `Entropy` 四个「没有测试引用」。逐个核实后发现：`DHead` 在 app 测试里 30 处、`Softmax` 9 处、`Entropy` 12 处、`LogitLens` 1 处（最后这个确实少，但它在 `workings.go` 的三条路径上被调用，合并覆盖里不为 0）——**扫描范围写窄了，结论就全错**。改用 `go tool cover` 的实测覆盖后才是可信的口径
 - **`newTestApp` 把同一个 `*model.Weights` 指针发给每个测试，而它成立的唯一依据是一句「测试只读权重」的注释。** 该注释本身写得对：`model.Bundled` 每次调用要重读并解析 2.4 MB JSON，而 `newTestApp` 被这个包五百多个测试各自调用，在 `-race` 下这曾把整个包推过 Go 默认的十分钟超时
   - 但**没有任何机制保证「只读」**。实测确认这不是假想：`newTestApp` 两次返回同一个指针（`A.W=0x...000 B.W=0x...000 same=true`），而在一次调用里写 `Layers[0].LN1G[0]` 之后，**后续任何测试都看得到那个改动**
   - 更早的一次实测更直接：把 `W.Config.DModel` 改成 48，下一个 `newTestApp` 立刻在 `New()` 里 panic——共享是真的，且破坏方式是崩溃

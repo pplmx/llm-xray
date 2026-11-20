@@ -740,3 +740,58 @@ func TestResidualChainRejectsAnIndexAnySliceCannotHold(t *testing.T) {
 		t.Fatal("dim -1 was accepted")
 	}
 }
+
+// TestScoreColorAndHeatColorKeepTheirDegenerateBranches pins the two colour helpers that sit
+// beside probColor.
+//
+// scoreColor answers colPanel2 when the scale is zero, for the same reason probColor answers
+// colFaint: v/scale divides by zero and the saturated result would paint every cell as an extreme.
+// heatColor answers colPanel2 for weights at or below 0.0005, which is how a masked cell reads as
+// empty — the causal mask sets the upper triangle to zero and those cells must be indistinguishable
+// from the panel behind them.
+//
+// Measured: deleting scoreColor's guard left the suite green across 361s, and moving heatColor's
+// threshold from 0.0005 to 0 left it green across 360s. Both are invisible to Texts(), which is
+// why three colour helpers in a row needed the same kind of test.
+func TestScoreColorAndHeatColorKeepTheirDegenerateBranches(t *testing.T) {
+	// scoreColor with no scale.
+	for _, scale := range []float32{0, -2} {
+		if got := scoreColor(1.5, scale); got != colPanel2 {
+			t.Errorf("scoreColor(1.5, %v) = %+v, want the panel colour %+v", scale, got, colPanel2)
+		}
+	}
+	// And with a real scale it still ramps, saturating at the ends rather than wrapping.
+	if scoreColor(1, 1) == scoreColor(0.2, 1) {
+		t.Fatal("scoreColor gives the same colour for 0.2 and 1 on a unit scale")
+	}
+	// Saturation past the scale is NOT asserted. ui.Color's alpha is a byte, so 0.06 + 0.9*t is
+	// clamped by the conversion itself: measured, scoreColor(50, 1) and scoreColor(1, 1) are
+	// byte-identical even with the explicit `if t > 1 { t = 1 }` deleted, so any assertion here
+	// would pass either way. Same finding as valueColor's clamp two rounds ago; the explicit
+	// clamp is for readers and for a future consumer that wants the ratio, not for the colour.
+	if scoreColor(-1, 1) == scoreColor(1, 1) {
+		t.Fatal("scoreColor gives a negative and a positive score the same colour; sign carries " +
+			"meaning on this scale")
+	}
+
+	// heatColor: at or below the threshold a cell reads as the panel behind it.
+	for _, w := range []float32{-1, 0, 0.0001, 0.0004, 0.0005} {
+		if got := heatColor(w); got != colPanel2 {
+			t.Errorf("heatColor(%v) = %+v, want the panel colour; a masked cell must read as empty",
+				w, got)
+		}
+	}
+	// Just above it, the cell is visible — otherwise the mask would swallow small real weights.
+	if heatColor(0.0006) == colPanel2 {
+		t.Fatal("heatColor(0.0006) still paints the panel colour; a real weight above the " +
+			"threshold has to be visible")
+	}
+	// And the ramp is monotonic up to the ceiling.
+	prev := heatColor(0.01).A
+	for _, w := range []float32{0.1, 0.3, 0.6, 1} {
+		if cur := heatColor(w).A; cur < prev {
+			t.Fatalf("heatColor alpha fell from %d to %d at weight %v", prev, cur, w)
+		}
+		prev = heatColor(w).A
+	}
+}

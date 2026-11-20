@@ -6,6 +6,12 @@
 
 ### Added
 
+- **同一族里剩下两个颜色辅助函数，退化分支也都没有测试。** 第 51 轮补了 `probColor`，这轮核 `scoreColor` 与 `heatColor`
+  - 去掉 `scoreColor` 的 `scale <= 0` 守卫 → 361 秒全绿，热力图每格都会被涂成极端色
+  - 把 `heatColor` 的阈值 `0.0005` 改成 `0` → 360 秒全绿，掩码格子（权重为 0）会显示成 `A=33` 的淡色而非背景色，本该看起来是空的
+  - 新增 `TestScoreColorAndHeatColorKeepTheirDegenerateBranches`，破坏性验证三例：`scoreColor(1.5, 0) = {R:255…A:245}`（本该是面板色）；`heatColor(0.0001)` 变成淡色（本该是面板色）；阈值调高到 0.5 后 `heatColor(0.0006)` 不再可见
+  - **一条与第 44 轮相同的自我发现**：`scoreColor` 的饱和夹紧同样无法被断言——`ui.Color` 的 alpha 是字节，`0.06 + 0.9*t` 自己就会截到 255，实测 `scoreColor(50, 1)` 与 `scoreColor(1, 1)` 逐字节相同。改成在注释里说明为什么不测它
+- **这一族到此为止**：`valueColor`（第 44 轮）、`probColor`（第 51 轮）、`scoreColor` 与 `heatColor`（本轮）——四个颜色辅助函数的退化分支现在都有测试或明确的注释。它们的共同点是**退化路径只影响像素，不进 `Texts()`**，所以只有专门看颜色的测试能发现
 - **`probColor` 的 `max <= 0` 守卫删掉后，355 秒全量测试全绿。** 概率色带传入的 `max` 是整行里最大的概率；它若是 0，`p/max` 除零得 `+Inf`，`sqrt` 之后 alpha 被截到 255——**整条带子每一格都是最深的颜色**，看上去像每个位置都是最可能的那个
   - 与第 44 轮 `valueColor` 同一形状：退化分支不会 panic、不会进 `Texts()`，只会在屏幕上糊成一片。新增 `TestProbColorIsDegenerateSafe`，除退化输入外还钉住「零概率比最大值淡」「四分之一值落在两者之间」「超出刻度不再变化」
   - 破坏性验证：去掉守卫 → `probColor(0.5, 0) = {R:76 G:194 B:255 A:255}`（本该是淡色兜底）

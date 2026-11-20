@@ -1190,3 +1190,45 @@ func TestReadmeStageTableNamesRealSymbols(t *testing.T) {
 			"else (rewrite it).", len(missing), strings.Join(missing, ", "))
 	}
 }
+
+// TestReadmeProgressDotStatesMatchTheCode keeps the sidebar legend describing dots that exist.
+//
+// The README said the current stage is "实心强调色 + 光晕" and a future one is "空心描边". Neither
+// is true: stepDots draws three filled boxes — an 18×6 accent bar for the current stage, a 6×6
+// colMuted dot for the ones behind and a 6×6 colBorder dot for the ones ahead — and there is no
+// glow anywhere in the package (`grep -rn 光晕 internal/app` finds only this README line). A
+// reader comparing the legend to the screen would conclude the glow was a rendering problem.
+//
+// Two things are asserted, because the legend can go wrong in two ways: the words that describe
+// effects the code does not have must be gone, and the three states the code does have must still
+// be told apart in the sentence.
+func TestReadmeProgressDotStatesMatchTheCode(t *testing.T) {
+	doc := readREADME(t)
+
+	i := strings.Index(doc, "侧栏的进度轨")
+	if i < 0 {
+		t.Fatal("the README no longer explains the sidebar's progress track; update this test")
+	}
+	line := doc[i:]
+	if j := strings.Index(line, "\n"); j >= 0 {
+		line = line[:j]
+	}
+
+	// Effects the package does not implement. If one is ever added, delete it from this list
+	// and put the word back in the README.
+	for _, absent := range []string{"光晕", "空心描边", "描边", "竖线随进度填充"} {
+		if strings.Contains(line, absent) {
+			t.Fatalf("the legend describes %q, which stepDots does not draw: it uses three filled "+
+				"boxes (an 18-DIP accent bar for the current stage and 6-DIP dots in colMuted and "+
+				"colBorder). Sentence:\n  %s", absent, line)
+		}
+	}
+
+	// And the states it does draw have to remain distinguishable in the sentence.
+	for _, want := range []string{"已完成", "当前", "未到"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("the legend no longer names the %q state; stepDots still draws exactly three",
+				want)
+		}
+	}
+}

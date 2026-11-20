@@ -678,6 +678,11 @@
 
 ### Fixed
 
+- **README 对侧栏进度轨的描述里，三处效果代码里根本没有：光晕、空心描边、竖线随进度填充。** `stepDots` 只画三个填充方块——当前阶段是 18×6 的强调色长条，已过阶段是 6×6 的 `colMuted` 点，未到是 6×6 的 `colBorder` 点，悬停时变亮。整个包里 `grep 光晕` 只命中 README 那一行
+  - 后果不是崩溃而是误导：读者把图例与屏幕对照，会以为光晕是渲染坏了；而「空心描边」描述的是一个根本不存在的样式
+  - 改成如实描述，并新增 `TestReadmeProgressDotStatesMatchTheCode`，双向检查——**代码没有的效果词不许出现**（光晕 / 空心描边 / 描边 / 竖线随进度填充），**代码有的三个状态必须仍在句子里**（已完成 / 当前 / 未到）
+  - 破坏性验证四次：把「光晕」「空心描边」「竖线随进度填充」逐一放回去、以及删掉一个状态名，各自报 `the legend describes "…"` 或 `no longer names the "未到" state`
+  - **58 张截图逐字节 0 变化**：这次只动文档，界面与 `docs/*.png` 都不受影响
 - **README 引用的截图张数在两处被写死，而没有任何东西与 `docsFrames` 绑定。** CONTRIBUTING 有四处写「六张 / 6 张」，README 的折叠图库写着「另外五张」（= 6 减去头图那一张）
   - 这两个数是**图库大小的派生值**，而 `docsFrames` 是一张会长的表（快照集就从 43 张长到 58 张）。`TestContributingSnapshotCountMatchesTheSet` 早就把**快照**那个数盯住了，图库这边一直没人管
   - 新增 `TestContributingSaysHowManyDocsImagesThereAre`：先要求 `docsFrames` 的每一项都在磁盘上、且磁盘上的 PNG 数与表项数相等，再从表项数推出两个文档该写的中文数字

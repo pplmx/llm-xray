@@ -434,8 +434,17 @@ func focusRings(t *testing.T, step, w, h int) [][4]float32 {
 	base := append([]byte(nil), tr.Image().Pix...)
 	var rings [][4]float32
 	for n := 0; n < 24; n++ {
+		before := a.Scroll.Y
 		tr.Key(0, ui.KeyTab)
 		tr.Frame()
+		// Tab can scroll the stage column once the focus leaves the chrome: the ring
+		// itself stays small, but every frame after that differs from the base by a
+		// whole-screen shift, so the "bounding box" runs to the bottom of the window and
+		// looks like a new stop. Measured on stage 7 — Scroll.Y 0 to 1065 at the press
+		// right after the last chip, which invented nine stops that do not exist.
+		if a.Scroll.Y != before {
+			return rings
+		}
 		img := tr.Image()
 		minX, minY, maxX, maxY := 1<<30, 1<<30, -1, -1
 		for y := 0; y < h; y++ {
@@ -760,5 +769,44 @@ func TestContributingCheckCIBlockMatchesTheJustfile(t *testing.T) {
 		t.Fatalf("found %d quoted commands in the verification block; it used to list the three "+
 			"steps beyond `just check`, so either the block was rewritten or this parser stopped "+
 			"matching", quoted)
+	}
+}
+
+// TestContributingPerStageFocusCountsMatchTheApp holds the per-stage stop counts to the app.
+//
+// The guide used to describe the other stages in one sentence — "第 7 步多一个温度滑块、第 1 步少掉
+// 两个分段控件和全部 chip" — and both halves were wrong. Stage 1 has three card chips, not none,
+// and stage 7 gives up its two segmented controls while gaining a temperature slider and two
+// more chips, so its length happens to equal stage 3's. Measured: 8, 10, 11, 12, 12, 10 and 11.
+//
+// The counts depend on which controls are live and how many cards the stage carries, both of
+// which change when a stage gains a card or a control becomes available there. That is why they
+// are in a table with a guard rather than in a sentence.
+func TestContributingPerStageFocusCountsMatchTheApp(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "CONTRIBUTING.md"))
+	if err != nil {
+		t.Fatalf("read CONTRIBUTING.md: %v", err)
+	}
+	doc := string(b)
+
+	for step := 0; step < len(lessons); step++ {
+		want := len(focusRings(t, step, 1180, 720))
+		if want < 2 {
+			t.Fatalf("stage %d has %d focus stops; the measurement is broken, not the table",
+				step+1, want)
+		}
+		row := fmt.Sprintf("| 第 %d 步 | %d |", step+1, want)
+		if !strings.Contains(doc, row) {
+			// Find what the guide currently says for that stage, so the failure names both sides.
+			var got string
+			for _, line := range strings.Split(doc, "\n") {
+				if strings.HasPrefix(line, fmt.Sprintf("| 第 %d 步 |", step+1)) {
+					got = line
+				}
+			}
+			t.Fatalf("stage %d has %d focus stops but the guide's table says %q (want %q); "+
+				"the count changes when a stage gains a card or a control becomes available there",
+				step+1, want, got, row)
+		}
 	}
 }

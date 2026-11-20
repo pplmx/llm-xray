@@ -858,6 +858,18 @@ func TestReadmeViewportOverflowMatchesTheLayout(t *testing.T) {
 		t.Fatalf("the tallest stage measures %.0f DIP = %.2f screens, past the range the README "+
 			"quotes (1742–1885 DIP); update the sentence's figures", tallest, screens)
 	}
+
+	// docs/keys.md states the same property, in the section explaining why the scroll keys are
+	// captured. It carries the measurement range too, and it is the copy a reader following the
+	// README's design rationale lands on. Checked here rather than in a second test so the two
+	// cannot answer differently — the same reason the fade duration moved into one test.
+	keys := readKeysDoc(t)
+	for _, want := range []string{claim, "1742–1885 DIP"} {
+		if !strings.Contains(keys, want) {
+			t.Fatalf("docs/keys.md no longer states %q in its scroll-keys section; the README "+
+				"still does, so the two documents would disagree", want)
+		}
+	}
 }
 
 // TestReadmeSkillLossMatchesTheOpenedTemperature keeps the per-position card's loss honest.

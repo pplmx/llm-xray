@@ -678,6 +678,12 @@
 
 ### Fixed
 
+- **README 引用的截图张数在两处被写死，而没有任何东西与 `docsFrames` 绑定。** CONTRIBUTING 有四处写「六张 / 6 张」，README 的折叠图库写着「另外五张」（= 6 减去头图那一张）
+  - 这两个数是**图库大小的派生值**，而 `docsFrames` 是一张会长的表（快照集就从 43 张长到 58 张）。`TestContributingSnapshotCountMatchesTheSet` 早就把**快照**那个数盯住了，图库这边一直没人管
+  - 新增 `TestContributingSaysHowManyDocsImagesThereAre`：先要求 `docsFrames` 的每一项都在磁盘上、且磁盘上的 PNG 数与表项数相等，再从表项数推出两个文档该写的中文数字
+  - **两种写法都查**：「六张」与「6 张」在同一段里并存，只查一种会在另一种说错时照样通过
+  - 破坏性验证三次：CONTRIBUTING 改成「7 张」→ 报 `does not say "6 张"`；往 `docsFrames` 加第七项并放一张图 → 报 `does not say "七张"`；README 的折叠标题改成「四张」→ 报 `collapsed gallery should say ... for 6 images of which one is the hero`
+  - **一处自己写错并已核实修正**：注释初稿说「六张 repeats three times」，实际是四处（跨两个段落）。**引用出现次数和引用数字一样，落笔前要数**
 - **README 与 `docs/cards.md` 都说「八张『多问了一步』的卡片」，实际是十张。** 两处都写着同一个过期数字，而没有任何测试会重新数它
   - 判据从代码取：`stages.go` 里被调用的分析型 `compute*` 函数有十个（logit lens、权重绑定、位置编码形状、头画像、头独立性、掩码反事实、嵌入结构、FFN 答案方向、FFN 集中度、层间改写），每个正好对应一张卡片；`docs/cards.md` 的 `##` 章节也是十个——**两侧都指向 10**，只有那两句话停在 8
   - 新增 `TestAnalyticalCardCountMatchesTheDocuments`：先从 `stages.go` 数出实际张数，再要求两份文档都用那个数（中文数字按现有写法拼出），最后要求 `cards.md` 的章节数与之相等

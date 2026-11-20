@@ -771,3 +771,66 @@ func TestDocsFramesCoverEveryImage(t *testing.T) {
 		}
 	}
 }
+
+// TestContributingSaysHowManyDocsImagesThereAre keeps CONTRIBUTING's "六张" honest.
+//
+// The guide tells a contributor that `just docs` regenerates "docs/ 下 README 引用的 6 张", and
+// 六张 appears four more times across the two paragraphs explaining that. That figure is the size
+// of docsFrames, which
+// grows whenever the gallery gains a stage or a variant — the snapshot suite went from 43 to 58
+// that way — and nothing connected the two. TestContributingSnapshotCountMatchesTheSet does this
+// job for the *snapshot* count; the docs gallery had no equivalent.
+//
+// Both the numeral and the digit are checked, because the guide uses both spellings and a check
+// for one of them passes while the other says something else.
+func TestContributingSaysHowManyDocsImagesThereAre(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "CONTRIBUTING.md"))
+	if err != nil {
+		t.Fatalf("read CONTRIBUTING.md: %v", err)
+	}
+	doc := string(b)
+
+	n := len(docsFrames)
+	// The files themselves have to match the table, or the count below is of something else.
+	for _, f := range docsFrames {
+		if _, err := os.Stat(filepath.Join("..", "..", "docs", f.name+".png")); err != nil {
+			t.Fatalf("docs/%s.png is in docsFrames but not on disk: %v", f.name, err)
+		}
+	}
+	onDisk, err := filepath.Glob(filepath.Join("..", "..", "docs", "*.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(onDisk) != n {
+		t.Fatalf("docs/ holds %d PNGs but docsFrames names %d; the gallery and its table disagree",
+			len(onDisk), n)
+	}
+
+	cn := [...]string{"零", "一", "两", "三", "四", "五", "六", "七", "八", "九", "十"}
+	if n >= len(cn) {
+		t.Fatalf("%d docs images is past what this test can spell", n)
+	}
+	for _, want := range []string{cn[n] + "张", fmt.Sprintf("%d 张", n)} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("CONTRIBUTING does not say %q about the README's screenshots, which is how "+
+				"many docsFrames names; the figure beside that sentence has gone stale", want)
+		}
+	}
+
+	// The README embeds one of them as the hero image and hides the rest under a <details>
+	// summary that counts them: "界面一览（点击展开另外五张）". That is n-1, derived the same way —
+	// adding a seventh frame would make the summary wrong while the figure above stayed right.
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatalf("read README.md: %v", err)
+	}
+	rest := n - 1
+	if rest < 0 || rest >= len(cn) {
+		t.Fatalf("%d remaining images is past what this test can spell", rest)
+	}
+	want := "界面一览（点击展开另外" + cn[rest] + "张）"
+	if !strings.Contains(string(readme), want) {
+		t.Errorf("the README's collapsed gallery should say %q for %d images of which one is the "+
+			"hero", want, n)
+	}
+}

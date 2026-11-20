@@ -159,10 +159,11 @@ func TestEveryStageRendersEmptyAtEverySize(t *testing.T) {
 // there. A NaN or an Inf reaching the screen would print as "NaN" beside a number the
 // reader is meant to trust, and no snapshot covers a one-token prompt.
 //
-// The attention paragraph legitimately prints "-Inf" when it explains the causal mask, so
-// the check looks for the bare numeric forms and allows that sentence.
+// The malformed-figure test lives in malformedFigure, shared with the other sweeps: it carries
+// both the marker list and the causal-mask exemption. This test used to keep its own list, which
+// stopped at NaN/+Inf/-Inf/Infinity and so could not see a missing format argument ("%!f(...)"),
+// and its own exemption, which matched a longer sentence than the shared one.
 func TestShortPromptsRenderWithoutNaNAcrossEveryStage(t *testing.T) {
-	const maskSentence = "真正让 key 彻底出局的只有右上角的因果掩码"
 	for _, prompt := range []string{"a", "中", "a中", "\xff"} {
 		for step := 0; step < len(lessons); step++ {
 			a := newTestApp(t)
@@ -172,14 +173,8 @@ func TestShortPromptsRenderWithoutNaNAcrossEveryStage(t *testing.T) {
 			tr := ui.NewTester(a.View, 1500, 940)
 			tr.Frame()
 			for _, s := range tr.Texts() {
-				if strings.Contains(s, maskSentence) {
-					continue
-				}
-				for _, bad := range []string{"NaN", "+Inf", "-Inf", "Infinity"} {
-					if strings.Contains(s, bad) {
-						t.Fatalf("prompt %q, stage %d renders %q in %q",
-							prompt, step, bad, s)
-					}
+				if marker, bad := malformedFigure(s); bad {
+					t.Fatalf("prompt %q, stage %d renders %s in %q", prompt, step, marker, s)
 				}
 			}
 		}

@@ -693,6 +693,12 @@
 
 ### Fixed
 
+- **`window_min_test.go` 里那处畸形数字检查还留着自己的一份判据，而它看不到格式串错误。** 上一轮把三个扫描收进 `malformedFigure` 时漏了第四个：`TestShortPromptsRenderWithoutNaNAcrossEveryStage` 自建了一份 `NaN/+Inf/-Inf/Infinity` 表
+  - 它因此**检测不到 `%!`**——Go 的格式化在参数对不上时会在输出里留下 `%!d(int=1)` 这样的痕迹，而那正是「一个数没按预期渲染」的另一种形态
+  - 隔离实验：往 `stages.go` 注入一行 `probe %!d(int=1)` → **在 `HEAD` 上这处扫描通过**（漏过），改走共享判据后报 `renders %! in`
+  - 它的豁免句也写得更长（「真正让 key 彻底出局的只有右上角的因果掩码」而不是共享函数的「因果掩码」），两处规则本来就在各自演化
+  - 现在四个扫描点全部调用 `malformedFigure`：`app_test.go` 的温度测试、`robustness_test.go` 两处、`window_min_test.go` 一处。标记表与豁免规则只有一处定义
+  - **教训是上一轮那条的加强版**：把散落的判据收成一处时，得先**数清楚散落了几处**，而不是改完手边几处就宣布统一
 - **「屏幕上不该出现的数」有三套判据，已经分歧。** 三处扫渲染文字的检查里，`TestEveryStageRendersAnyInput` 与 `app_test.go` 的温度那处只查 `NaN / +Inf`，另两处还查 `-Inf`
   - **`-Inf` 恰恰是更该被查的那一侧**：负无穷在这个应用里来自 `-ln(p)` 与除零，正无穷反而少见；第 8 轮修过的「温度 0.1 时 `-Inf%` 上屏」就是这一侧
   - 隔离实验：往 `stages.go` 注入一行显示 `-Inf` 的文字 → **修正前通过**，修正后报 `shows -Inf`。同一个注入，只差这一条判据

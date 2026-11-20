@@ -52,20 +52,41 @@ func TestEveryStageRendersAnyInput(t *testing.T) {
 				a.Step = step
 				tr := ui.NewTester(a.View, 1180, 720)
 				tr.Frame()
-				// A NaN or an infinity in a formatted figure means some
-				// quantity went wrong. The one legitimate "+Inf"-like string
-				// is the softmax callout explaining the causal mask.
+				// A NaN or an infinity in a formatted figure means some quantity went
+				// wrong. malformedFigure carries the marker list and the causal-mask
+				// exemption, so this and the other sweeps cannot drift apart again.
 				for _, s := range tr.Texts() {
-					if strings.Contains(s, "因果掩码") {
-						continue
-					}
-					if strings.Contains(s, "NaN") || strings.Contains(s, "+Inf") {
-						t.Fatalf("step %d shows %q for prompt %q", step+1, s, in.prompt)
+					if marker, bad := malformedFigure(s); bad {
+						t.Fatalf("step %d shows %s in %q for prompt %q", step+1, marker, s, in.prompt)
 					}
 				}
 			}
 		})
 	}
+}
+
+// malformedFigure reports whether a rendered string shows a figure that went wrong, and says which
+// marker it found.
+//
+// Three sweeps check this property — TestEveryStageRendersAnyInput, TestEveryLegalConfigRendersEveryStage
+// and the temperature test in app_test.go — and they had drifted apart: two looked for NaN/+Inf/-Inf,
+// one stopped at NaN/+Inf. That is one property with two definitions, and the narrower one let an
+// injected "-Inf" through while the wider one caught it (measured).
+//
+// It lives here, next to the sweeps, so adding a marker or an exemption is one edit. The causal-mask
+// exemption is part of the definition rather than of each caller: the softmax callout explains
+// "那里是 -Inf，softmax 之后才是 0", which is the app teaching the reader what the mask does, not a
+// computed figure escaping.
+func malformedFigure(s string) (string, bool) {
+	if strings.Contains(s, "因果掩码") {
+		return "", false
+	}
+	for _, marker := range []string{"NaN", "+Inf", "-Inf", "Infinity", "%!"} {
+		if strings.Contains(s, marker) {
+			return marker, true
+		}
+	}
+	return "", false
 }
 
 // TestUnprintableBytesKeepTheirEscape checks control and invalid bytes are always
@@ -811,14 +832,9 @@ func TestEveryLegalConfigRendersEveryStage(t *testing.T) {
 					tr := ui.NewTester(a.View, 1500, 3000)
 					tr.Frame()
 					for _, s := range tr.Texts() {
-						// The softmax callout legitimately mentions the mask producing -Inf.
-						if strings.Contains(s, "因果掩码") {
-							continue
-						}
-						if strings.Contains(s, "NaN") || strings.Contains(s, "+Inf") ||
-							strings.Contains(s, "-Inf") || strings.Contains(s, "%!") {
-							t.Fatalf("%s, prompt %q, stage %d renders %q",
-								v.name, p.name, step+1, s)
+						if marker, bad := malformedFigure(s); bad {
+							t.Fatalf("%s, prompt %q, stage %d renders %s in %q",
+								v.name, p.name, step+1, marker, s)
 						}
 					}
 				}()

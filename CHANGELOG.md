@@ -693,6 +693,18 @@
 
 ### Fixed
 
+- **「屏幕上不该出现的数」有三套判据，已经分歧。** 三处扫渲染文字的检查里，`TestEveryStageRendersAnyInput` 与 `app_test.go` 的温度那处只查 `NaN / +Inf`，另两处还查 `-Inf`
+  - **`-Inf` 恰恰是更该被查的那一侧**：负无穷在这个应用里来自 `-ln(p)` 与除零，正无穷反而少见；第 8 轮修过的「温度 0.1 时 `-Inf%` 上屏」就是这一侧
+  - 隔离实验：往 `stages.go` 注入一行显示 `-Inf` 的文字 → **修正前通过**，修正后报 `shows -Inf`。同一个注入，只差这一条判据
+  - 修法不是补两处字面量，而是**把判据收成一处**：新增 `malformedFigure(s) (marker, bool)`，标记表与「因果掩码」豁免都在里面，三处改为调用它。原来的豁免规则也是各写一份，而这正是分歧的来源
+  - 验证共用判据确实是唯一来源：把 `malformedFigure` 的标记表收窄回 `NaN/+Inf`（同时注入 `-Inf`）→ **三处检查同时失效**；恢复后同时生效。不是三个地方各改一遍，是一处改动决定三处
+  - **第一次跑门槛就是红的，而这正是它该抓的东西**：给 `app_test.go` 那处加上 `-Inf` 后立刻报出课文里合法的「因果掩码 … -Inf」。我先前在探针里也踩了同一个坑（把刻意豁免的句子当成畸形），两次都靠同一条豁免收场——所以这次把豁免放进共用函数，而不是继续在每处复制
+- **同一件「屏幕上不该出现的数」有两套判据，其中两处漏了 `-Inf`。** 三个地方都在扫渲染文字里的畸形数字：`TestEveryLegalConfigRendersEveryStage` 与 `window_min_test.go` 查 `NaN / +Inf / -Inf`，而 `TestEveryStageRendersAnyInput` 与 `app_test.go` 的一处只查 `NaN / +Inf`
+  - **`-Inf` 比 `+Inf` 更该被查**：这个应用里负无穷来自 `-ln(p)` 与除零，正无穷反而少见。第 8 轮修过一次温度 0.1 时 `-Inf%` 上屏，那正是 `-Inf` 这一侧
+  - 实测隔离：往 `stages.go` 里注入一行显示 `-Inf` 的文字 → **修正前 `TestEveryStageRendersAnyInput` 通过**，修正后报 `shows "probe -Inf"`。同一个注入、同一台机器，只差这一条判据
+  - 两处补上 `-Inf`，并把理由写进注释：**同一个性质的两条检查，不应该对「这个性质是什么」有不同看法**
+  - 顺带扩大扫了一遍交叉维度——4 个预设 × 7 个阶段 × 2 种宽度（桌面与手机），畸形文本 0 处。这个组合目前没有专门测试，但 `TestEveryStageRendersAnyInput` 用 13 种更极端的输入覆盖了同一性质，所以没有再补一条
+  - **一次探针判据抄错的自我纠正**：第一版探针把课文里合法的「因果掩码 … -Inf」也报成畸形，6 条全红；查证后确认那是**刻意的豁免**（`TestEveryLegalConfigRendersEveryStage` 里就有），加上同一条豁免后归零
 - **一条守卫替被测代码做了它该验证的那一步，于是三个动作的「真实路径」从来没被测过。** `TestEveryPinReleaseTriggerIsInTheReadme` 检查 README 那行承诺的六个「解除固定」动作，前几轮看着很完整——它也确实逐条断言了 `KeyQ < 0`。问题在于其中三行是这么写的：
   ```go
   {"切换层", func(a *App) { a.Layer = 1; a.clearHover() }},   // ← 测试自己调了 clearHover

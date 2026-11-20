@@ -6860,8 +6860,10 @@ func TestTemperatureExtremesKeepTheDistributionValid(t *testing.T) {
 			tr := ui.NewTester(b.View, 1500, 940)
 			tr.Frame()
 			for _, s := range tr.Texts() {
-				if strings.Contains(s, "NaN") || strings.Contains(s, "+Inf") || strings.Contains(s, "Infinity") {
-					t.Fatalf("T=%.1f stage %d renders %q", temp, step, s)
+				// malformedFigure carries the marker list and the causal-mask exemption, so
+				// this sweep and the two in robustness_test.go cannot disagree.
+				if marker, bad := malformedFigure(s); bad {
+					t.Fatalf("T=%.1f stage %d renders %s in %q", temp, step, marker, s)
 				}
 			}
 		}

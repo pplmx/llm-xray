@@ -1,10 +1,12 @@
 package app
 
 import (
+	"github.com/egoist/mygo/ui"
 	"math"
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // TestClampIndexContract pins all four answers and the trap in the n == 0 one.
@@ -313,4 +315,103 @@ func evaluatePayloadChain(t *testing.T, chain string) rune {
 		sum += int(v) << shift
 	}
 	return rune(sum)
+}
+
+// TestTruncateRunesCountsCharactersNotBytes pins the unit truncateRunes works in.
+//
+// The function shortens a prompt chip's label. Rewriting it to slice s[:n] — bytes instead of
+// runes — left the whole suite green across a 358s run, and that version is wrong twice over:
+// "注意力就是加权求和" truncated to 3 becomes "注…" rather than "注意力…", and a cut that lands
+// inside a multi-byte sequence produces an invalid UTF-8 byte on screen.
+//
+// The three-property version below is what the helper is for: it counts characters, it only adds
+// the ellipsis when something was actually dropped, and it never emits an invalid byte. The last
+// one is the property, the others are examples, which is the right split when the input space is
+// every string a reader can type.
+func TestTruncateRunesCountsCharactersNotBytes(t *testing.T) {
+	cases := []struct {
+		in   string
+		n    int
+		want string
+	}{
+		{"attention is all you need", 10, "attention …"},
+		{"注意力就是加权求和", 3, "注意力…"},
+		{"𝄞𝄞𝄞", 2, "𝄞𝄞…"},  // 4-byte runes
+		{"abc", 3, "abc"},  // exactly n: nothing dropped, no ellipsis
+		{"abc", 10, "abc"}, // shorter than n
+		{"", 5, ""},
+	}
+	for _, c := range cases {
+		if got := truncateRunes(c.in, c.n); got != c.want {
+			t.Errorf("truncateRunes(%q, %d) = %q, want %q", c.in, c.n, got, c.want)
+		}
+	}
+
+	// The property: truncating never *introduces* an invalid byte. The input may already have
+	// one — the app accepts arbitrary bytes as a prompt — and when nothing is dropped the
+	// function returns it unchanged, which is correct: a display helper must not silently
+	// rewrite the reader's input. What it must not do is cut a multi-byte sequence in half,
+	// which is exactly what a byte-slice version does.
+	inputs := []string{
+		"注意力就是加权求和", "𝄞𝄞𝄞", "a注🙂\xffb", "\xff\xfe", "mixed 内容 with spaces",
+	}
+	for _, s := range inputs {
+		for n := 0; n <= len([]rune(s))+1; n++ {
+			got := truncateRunes(s, n)
+			if got == s {
+				continue // nothing dropped, returned verbatim by design
+			}
+			// Something was cut, so the prefix has to be whole characters.
+			if !utf8.ValidString(strings.TrimSuffix(got, "…")) {
+				t.Fatalf("truncateRunes(%q, %d) = %q; the cut prefix is not valid UTF-8, so the "+
+					"last character was sliced in half", s, n, got)
+			}
+		}
+	}
+}
+
+// TestRailReadoutNeverShowsThePlaceholder keeps the Q/K readout from falling back to "?".
+//
+// railTokenText answers "?" for an out-of-range index, and its only caller checks the bounds
+// before calling, so that answer never reaches the screen. Relaxing the caller's condition to
+// `cq >= 0 && ck >= 0` leaves the whole suite green — measured across a 364s run — and the app
+// then prints "? × ?" where a query and key should be. That is worse than a panic would be:
+// nothing reports it, and the reader sees a placeholder they cannot explain.
+//
+// So the assertion is on the rendered readout, not on the helper: at every stage and with a
+// pinned cell, no "?" may appear in the rail's Q/K row.
+func TestRailReadoutNeverShowsThePlaceholder(t *testing.T) {
+	// The state that reaches the placeholder is a stale pin: a cell pinned against a longer
+	// prompt, then the prompt shortened. clampPinnedCell normally handles this, but the pin can
+	// also be set from outside, and cellCursor hands the fields back unchecked. Measured: with
+	// the caller's condition relaxed to `cq >= 0 && ck >= 0`, this exact state renders "?" in
+	// the readout while the suite stays green.
+	for _, step := range []int{2, 3} {
+		a := newTestApp(t)
+		a.Step = step
+		a.applyPrompt("ab")
+		a.KeyQ, a.KeyK = 50, 40
+		if a.KeyQ < len(a.Trace.Tokens) {
+			t.Fatalf("the test's pin is not actually outside the trace (%d tokens, pin %d); "+
+				"it proves nothing", len(a.Trace.Tokens), a.KeyQ)
+		}
+		tr := ui.NewTester(a.View, 1500, 940)
+		tr.Frame()
+		for _, s := range tr.Texts() {
+			if s == "?" {
+				t.Fatalf("stage %d renders the rail's placeholder \"?\" for a pin outside the "+
+					"trace; the caller's bounds check is missing or too weak", step+1)
+			}
+		}
+	}
+
+	// And the helper itself still answers "?" rather than panicking, so a future caller that
+	// has not checked gets a placeholder instead of a crash.
+	var toks []modelToken
+	if got := railTokenText(toks, 0); got != "?" {
+		t.Fatalf("railTokenText on an empty slice returned %q, want the placeholder", got)
+	}
+	if got := railTokenText(toks, -1); got != "?" {
+		t.Fatalf("railTokenText(-1) returned %q, want the placeholder", got)
+	}
 }

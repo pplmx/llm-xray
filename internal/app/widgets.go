@@ -264,6 +264,17 @@ func markChip(c *ui.Context, label string, color ui.Color) {
 		Padding(2, 4).Radius(3).Background(color).Shrink(0)
 }
 
+// railTokenText names one token for the rail's Q/K readout.
+//
+// The bounds guard is unreachable from the app: the only caller checks `cq >= 0 && ck >= 0 &&
+// cq < len(tokens) && ck < len(tokens)` before reaching it, which is why deleting the guard
+// leaves the whole suite green — measured across a full 365s run. It stays because "?" is a
+// better answer than an index panic for a caller that has not checked, and because the readout
+// is drawn every frame: a panic here would blank the window rather than fail one test.
+//
+// It does not replace that caller's check, though. Removing the check and relying on this guard
+// would print "?" where a query should be, which is a wrong number on screen rather than a
+// crash — worse, because nothing reports it.
 func railTokenText(tokens []modelToken, i int) string {
 	if i < 0 || i >= len(tokens) {
 		return "?"

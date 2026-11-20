@@ -500,6 +500,72 @@ func TestNoStageNamesTheBundleContextAtAnotherWindow(t *testing.T) {
 	}
 }
 
+// TestNoStageNamesTheBundleVocabulary is the vocab member of the same family, found by rendering
+// rather than by reading code.
+//
+// The FFN card's heading and opening paragraph said "把 256 个字节按余弦排名" and "什么都不做的
+// 话，256 个里随便一个的平均名次是 128". Both are the bundle's vocabulary written as literals,
+// and both sat directly above a table that already used first.Vocab — so a 128-wide checkpoint
+// printed a heading promising 256 rankings over a table of 128, with the chance rank still
+// reading 128 when it had become 64. Measured by truncating the bundle's embedding table to 128
+// ids: the heading and the paragraph were the only strings that did not follow the config.
+//
+// vocab is the last config field whose prose could be swept this way. d_model, d_ff and ctx have
+// the same guard; n_head has TestEveryHeadCountRendersAndCountsItself; n_layer has neither, and
+// TestCardsThatCompareLayersNeedTwoOfThem records why — the cards that name one layer return
+// early below two layers, so there is no prose left to check and a "两层 survived unchanged" sweep
+// was measured to be vacuous. It is separate from the others because the copy is made differently
+// again: a smaller vocabulary just drops embedding rows, where d_ff rebuilds both projections and
+// n_head only relabels a split.
+func TestNoStageNamesTheBundleVocabulary(t *testing.T) {
+	base, err := model.Bundled()
+	if err != nil {
+		t.Skipf("no bundled weights: %v", err)
+	}
+	small := *base
+	small.Config = base.Config
+	small.Config.Vocab = base.Config.Vocab / 2
+	small.TokEmbed = base.TokEmbed[:small.Config.Vocab*base.Config.DModel]
+	if small.Config.Vocab == base.Config.Vocab {
+		t.Fatal("the copy has the bundle's vocabulary, so this test proves nothing")
+	}
+
+	bundled := stageTexts(t, base)
+	smaller := stageTexts(t, &small)
+	if len(smaller) == 0 {
+		t.Fatal("the narrow-vocabulary copy rendered nothing")
+	}
+
+	// Only sentences about the vocabulary. The bundle's 256 is also a byte value in the
+	// tokenising stage, and the guard would otherwise report a string that says nothing about
+	// how many ids the model has — the mistake the ctx version of this check made first.
+	vocab := fmt.Sprintf("%d", base.Config.Vocab)
+	re := standaloneNumber(vocab)
+	var stale []string
+	for s := range bundled {
+		if !re.MatchString(s) || !strings.Contains(s, "字节") {
+			continue
+		}
+		// The neighbourhood rather than the sentence: the FFN paragraph also quotes measured
+		// ranks that differ between the two renders, so it changes as a whole while the
+		// constant inside it rides along. Verified — the whole-string form of this check
+		// caught the heading but stayed green with "256 个字节" put back into the paragraph.
+		if windowUnchanged(bundled, smaller, s, re, 24) {
+			stale = append(stale, s)
+		}
+	}
+	if len(stale) > 0 {
+		sort.Strings(stale)
+		var b strings.Builder
+		for _, s := range stale {
+			b.WriteString("\n  " + s)
+		}
+		t.Fatalf("%d string(s) name the bundle's vocab %s and survive unchanged at vocab %d, so "+
+			"they are constants rather than derived:%s",
+			len(stale), vocab, small.Config.Vocab, b.String())
+	}
+}
+
 // headsWeights returns a copy of w declaring a different n_head. The tensors are unchanged: the
 // head count only decides how the existing d_model is split, which is what the app reads for its
 // labels and what the per-head views index into.

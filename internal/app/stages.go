@@ -2987,10 +2987,18 @@ func (a *App) stageFFNAnswerDirection(c *ui.Context) {
 		return
 	}
 	a.cardNamed(c, "FFN 写出了答案", func() {
-		sectionTitle(c, "FFN 的输出指向下一个字节吗", "把 256 个字节按余弦排名")
-		mutedText(c, "上一张卡片看的是单元怎么分工。这里问一个更直接的问题：把 256 个字节按「它的输入嵌入和这个向量的余弦」排名，"+
-			"真实的下一个字节排第几？什么都不做的话，256 个里随便一个的平均名次是 128。")
+		// The counts come from the loaded checkpoint, not from the bundle. The table under this
+		// paragraph and the misconception quote below it already used first.Vocab; these two
+		// lines said "256 个字节" and "平均名次是 128" as literals, so a 128-wide vocabulary
+		// printed a heading promising 256 rankings above a table of 128. Measured with the
+		// bundle's embedding table truncated to 128 ids.
 		first := rows[0]
+		sectionTitle(c, "FFN 的输出指向下一个字节吗",
+			fmt.Sprintf("把 %d 个字节按余弦排名", first.Vocab))
+		mutedText(c, fmt.Sprintf("上一张卡片看的是单元怎么分工。这里问一个更直接的问题："+
+			"把 %d 个字节按「它的输入嵌入和这个向量的余弦」排名，"+
+			"真实的下一个字节排第几？什么都不做的话，%d 个里随便一个的平均名次是 %d。",
+			first.Vocab, first.Vocab, first.Vocab/2))
 		out := make([]barRow, 0, len(rows)*2)
 		var maxRank float64 = 8
 		for _, m := range rows {

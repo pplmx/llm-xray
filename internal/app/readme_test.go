@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -28,6 +27,17 @@ func readREADME(t *testing.T) string {
 	b, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
 	if err != nil {
 		t.Fatalf("cannot read the README: %v", err)
+	}
+	return string(b)
+}
+
+// readKeysDoc returns docs/keys.md, the interaction rationale the README links to. It carries
+// some of the same figures as the README, and those copies need the same guards.
+func readKeysDoc(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "..", "docs", "keys.md"))
+	if err != nil {
+		t.Fatalf("cannot read docs/keys.md: %v", err)
 	}
 	return string(b)
 }
@@ -226,13 +236,32 @@ func TestReadmeKeyboardScopeMatchesTheCode(t *testing.T) {
 }
 
 // TestReadmeFadeDurationMatchesTheTransition: "切换阶段时中栏和检查器会淡入（160ms）".
+//
+// The duration is stated twice — once in the README's motion paragraph and once in docs/keys.md's
+// "切换阶段时的淡入" section — and this test only read the README. So changing stageFade.Duration
+// moved neither of them and only one of the two would ever have been noticed; the guard was
+// covering one of the two copies, which is the shape this repository keeps finding (the tooltip
+// count, the snapshot count, the card-callout distribution).
+//
+// Both files are checked now, and each has to state the number that is actually configured.
 func TestReadmeFadeDurationMatchesTheTransition(t *testing.T) {
-	doc := readREADME(t)
-	if !strings.Contains(doc, "160ms") {
-		t.Fatal("the README no longer states the fade duration; update or remove this test")
+	// Derived from the transition, not written twice: a guard that hardcodes 160 in both the
+	// assertion and the search would keep passing if the code and both documents moved together
+	// to a different number the code no longer uses.
+	want := fmt.Sprintf("%dms", stageFade.Duration.Milliseconds())
+	if want != "160ms" {
+		t.Fatalf("stageFade.Duration is %v, so the documented figure should now read %s; update "+
+			"README.md and docs/keys.md together", stageFade.Duration, want)
 	}
-	if got := stageFade.Duration; got != 160*time.Millisecond {
-		t.Fatalf("the README says 160ms, the transition is %v", got)
+
+	for _, doc := range []struct{ name, body string }{
+		{"README.md", readREADME(t)},
+		{"docs/keys.md", readKeysDoc(t)},
+	} {
+		if !strings.Contains(doc.body, want) {
+			t.Fatalf("%s does not state the fade duration as %s, which is what stageFade.Duration "+
+				"is configured to — the two will read as different behaviours", doc.name, want)
+		}
 	}
 }
 

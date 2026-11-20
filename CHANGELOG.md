@@ -659,6 +659,13 @@
 
 ### Fixed
 
+- **同一个 160ms 写在两份文档里，守卫只读了一份。** `stageFade.Duration` 是 160ms，README 的动效段落和 `docs/keys.md` 的「切换阶段时的淡入」各写了一遍，而 `TestReadmeFadeDurationMatchesTheTransition` 只打开 README
+  - 于是改 `stageFade.Duration` 时两份文档都不会动，而只有一份会在下一次有人去读它时被发现——**守卫覆盖了两份拷贝里的一份**，这正是这个仓库反复出现的形态（tooltip 计数、截图张数、常见误解分布）
+  - 判据也一并改成**从代码派生**：原来把 `160` 同时写在断言和搜索串里，代码与两份文档一起改到别的数时仍会通过。现在期望值由 `stageFade.Duration.Milliseconds()` 拼出，代码先自己核对「你改了时长，两份文档该跟着改」，再逐份检查
+  - 新增 `readKeysDoc` 辅助函数，让 `docs/keys.md` 的其它数字以后也能被同一种方式盯上
+  - 破坏性验证：`keys.md` 改成 200ms → 报 `docs/keys.md does not state the fade duration as 160ms`；把 `stageFade.Duration` 改成 200ms → 报 `stageFade.Duration is 200ms`；README 去掉数字 → 报 `README.md does not state the fade duration as 160ms`
+  - **又一次「变异没落盘」**：README 那一次第一次没有任何输出，原因是我的替换串用了半角括号 `（）` 而文件里是全角 `（）`。改用精确锚点后立刻红。与第 10 轮那次同类，**mutation 没红时先确认变异真的写进去了**
+  - 顺带扫了两份文档重复出现的数字：README 与 `keys.md` 之间只有 `160ms` 这一个（现已覆盖）；`cards.md` 与 README 共享的 12 个大数都是架构常量（64/96/256/384）或已有专门的测量值守卫
 - **`mygo.json` 里有两个值，改了之后界面与打包会对不上，而没有任何测试会红。**
   - **`android.splash` 与 `colBg` 是同一句「与背景同色，启动时不闪白」的两份字面量。** 实测把 `colBg` 改成 `#101820`，整套测试照样全绿，而每次 Android 启动都会先闪一下旧颜色
   - **`name` 与侧栏标题是同一个词的三处拷贝**（`mygo.json` 的 `name`、`app.go` 的桌面侧栏、`compact.go` 的手机顶栏）。实测把 `name` 改成 `LLM X-Ray`，测试全绿，窗口会在一份叫 `LLM X-Ray` 的包里标题写着 `llm-xray`。这**不是设计选择**：`6a58af6` 的提交信息明确写着「The sidebar drops the anatomy metaphor with it: … becomes "llm-xray / Transformer 逐层透视"」，二者是刻意一致的

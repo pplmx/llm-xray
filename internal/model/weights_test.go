@@ -166,19 +166,28 @@ func TestLoadErrorsSayWhatWasBeingLoaded(t *testing.T) {
 	}
 }
 
-// TestVocabularyIsPinnedToByteVocab records which config fields a -weights file can vary.
+// TestWhichConfigFieldsWeightsCanVary records the reachability of every config dimension the app
+// reasons about, because two of its guards rest on claims about it.
 //
-// internal/app has one "no stage names the bundle's <field>" guard per config dimension, and each
-// sweeps the app by rendering it on a modified copy. Four of those copies — d_model, d_ff, ctx and
-// n_head — are states a reader can actually reach: round-tripping them through json.Marshal and
-// Parse returns a nil error. vocab is not. This test pins the asymmetry, so the app-side guard's
-// comment claiming vocab is unreachable has an owner and cannot quietly become false.
+// internal/app has one "no stage names the bundle's <field>" guard per config dimension, each
+// sweeping the app by rendering it on a modified copy. This test answers the prior question for
+// every field: can that copy be loaded? Round-tripping each through json.Marshal and Parse:
 //
-// It matters because the two situations call for different work. An unreachable sweep is still
-// worth keeping — it stops the same quantity being said two ways — but a reader of the app tests
-// should not conclude that -weights can put a 128-id map on screen, and anyone who lifts the
-// byte-tokenizer restriction needs to know that this is the test that will notice.
-func TestVocabularyIsPinnedToByteVocab(t *testing.T) {
+//	d_model, d_ff, ctx, n_head, n_layer  → nil error, so those copies are states -weights can
+//	                                        produce and their sweeps check something a reader sees
+//	vocab                                → rejected by Weights.validate
+//
+// vocab is the exception, and it is the one the app tests had wrong: TestNoStageNamesTheBundleVocabulary
+// sweeps a 128-wide vocabulary that no reader can arrive at, because the tokenizer is byte-level and
+// prompt ids only run 0..255. That guard is still worth keeping — it stops one card saying the same
+// quantity two ways — but its comment now says the state is unreachable, and this test is what keeps
+// that claim honest in both directions.
+//
+// A failure here means a comment elsewhere needs rewriting, so each case names the direction:
+// a reachable field that stopped loading makes some app sweep moot, and a lifted vocab pin makes
+// the vocab guard's caveat false. Anyone who gives the tokenizer a real vocabulary will see the
+// vocab case fail, which is the intended signal to go and rewrite that comment.
+func TestWhichConfigFieldsWeightsCanVary(t *testing.T) {
 	base, err := Bundled()
 	if err != nil {
 		t.Skipf("no bundled weights: %v", err)
@@ -209,10 +218,24 @@ func TestVocabularyIsPinnedToByteVocab(t *testing.T) {
 	// asymmetry is stated in one place: adding a reachable field to the app's guards means
 	// adding it here, and lifting the vocab pin means deleting from this list or moving vocab
 	// into it.
+	//
+	// n_layer and d_model are listed too. Neither has a "no stage names the bundle's <field>"
+	// sweep — TestCardsThatCompareLayersNeedTwoOfThem explains why n_layer cannot have one, and
+	// d_model's sweep is on the list above — but both are states -weights can produce, so a
+	// future guard for either would be checking something real. Measured rather than assumed:
+	// both return a nil error here.
 	reachable := []struct {
 		name string
 		make func(*Weights) *Weights
 	}{
+		{"n_layer", func(b *Weights) *Weights {
+			// A one-layer checkpoint: drop the second layer's tensors along with the count.
+			w := *b
+			w.Config = b.Config
+			w.Config.NLayer = 1
+			w.Layers = b.Layers[:1]
+			return &w
+		}},
 		{"ctx", func(b *Weights) *Weights {
 			w := *b
 			w.Config = b.Config
@@ -237,6 +260,43 @@ func TestVocabularyIsPinnedToByteVocab(t *testing.T) {
 				c.W2 = make([]float32, w.Config.DFF*w.Config.DModel)
 				copy(c.W1, l.W1)
 				copy(c.W2, l.W2)
+				w.Layers = append(w.Layers, c)
+			}
+			return &w
+		}},
+		{"d_model", func(b *Weights) *Weights {
+			// Every tensor is resliced, which is what narrowWeights does for the app sweep.
+			d := b.Config.DModel / 2
+			cut := func(src []float32, rows, old, row int) []float32 {
+				out := make([]float32, rows*row)
+				for i := 0; i < rows; i++ {
+					copy(out[i*row:(i+1)*row], src[i*old:i*old+row])
+				}
+				return out
+			}
+			w := *b
+			w.Config = b.Config
+			w.Config.DModel = d
+			w.TokEmbed = cut(b.TokEmbed, b.Config.Vocab, b.Config.DModel, d)
+			w.PosEmbed = cut(b.PosEmbed, b.Config.Ctx, b.Config.DModel, d)
+			w.LNFG = append([]float32{}, b.LNFG[:d]...)
+			w.LNFB = append([]float32{}, b.LNFB[:d]...)
+			w.Layers = nil
+			for _, l := range b.Layers {
+				c := l
+				c.LN1G = append([]float32{}, l.LN1G[:d]...)
+				c.LN1B = append([]float32{}, l.LN1B[:d]...)
+				c.LN2G = append([]float32{}, l.LN2G[:d]...)
+				c.LN2B = append([]float32{}, l.LN2B[:d]...)
+				c.WQ = cut(l.WQ, d, b.Config.DModel, d)
+				c.WK = cut(l.WK, d, b.Config.DModel, d)
+				c.WV = cut(l.WV, d, b.Config.DModel, d)
+				c.WO = cut(l.WO, d, b.Config.DModel, d)
+				c.W1 = cut(l.W1, d, b.Config.DModel, b.Config.DFF)
+				c.W2 = make([]float32, b.Config.DFF*d)
+				for r := 0; r < b.Config.DFF; r++ {
+					copy(c.W2[r*d:(r+1)*d], l.W2[r*b.Config.DModel:])
+				}
 				w.Layers = append(w.Layers, c)
 			}
 			return &w

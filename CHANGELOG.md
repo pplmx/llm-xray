@@ -6,11 +6,17 @@
 
 ### Added
 
+- **把配置维度的可达性从三个补到五个，并给那条测试改了名字。** 上一轮新增的 `TestVocabularyIsPinnedToByteVocab` 只往返验了 `ctx`、`n_head`、`d_ff` 三个字段，漏掉了 `n_layer` 与 `d_model`——而这两个同样被 app 的守卫扫描过或依赖过（`narrowWeights` 用的就是减半的 d_model）
+  - 实测补上：`n_layer=1` 与减半 d_model 的完整副本都返回 `nil`。现在五个维度全是可达状态，vocab 是唯一的例外
+  - **测试名随之改准**：`TestVocabularyIsPinnedToByteVocab` → `TestWhichConfigFieldsWeightsCanVary`。原名只说了它覆盖的一半，而这个仓库已经吃过「名字描述的范围小于实际覆盖」的亏（`TestPrintedArithmeticClosesAcrossTheControls` 名字说跨控件、实际只算模型浮点）
+  - 注释重写成双向说明：哪五个字段可达 → 它们的 sweep 检查的是读者看得见的东西；vocab 被 `Weights.validate` 拒绝 → `TestNoStageNamesTheBundleVocabulary` 的 sweep 是构造出来的状态。**失败时该往哪个方向改也写清楚了**
+  - 破坏性验证做了五次，每次只锁一个字段：`ctx is 32, want 64`、`n_layer is 1, want 2`、`n_head is 2, want 4`、`d_ff is 192, want 384`、`d_model is 48, want 96`，各自报出「Parse rejected a <field> copy …」。**没有一个是靠公共分支兜过去的**
+  - 一次自己造成的假信号记下来：第一次跑 `n_head` 的变异时脚本把守卫插进了 `Config` 结构体而不是 `validate`，编译直接失败——`FAIL` 来自构建错误而不是断言。**「红了」不等于「抓到了」**，要看红在哪一行
 - **查清了一件上一轮没查的事：配置维度的守卫里，只有 vocab 那一条测的是读者到不了的状态。** 上一轮修掉第 6 步卡片里写死的 256 之后，顺手加了一条 `TestNoStageNamesTheBundleVocabulary`。这轮问了一个更基础的问题——**这些「换一份配置重新渲染」的守卫，那几份配置真的能加载吗？** 逐个实测（`json.Marshal` 再 `Parse` 回来）：
   - `d_ff=192`、`n_head=2`、`ctx=32` 三种都返回 `nil`，说明它们都是 `-weights` 真能摆到屏幕上的状态，对应的 app 守卫测的是可达路径
   - **`vocab=128` 返回 `weights: vocab is 128, want 256 for byte-level tokens`**——`Weights.validate` 把词表硬锁在 `ByteVocab`，因为分词器是字节级的、提示词产生的 id 只走 0..255。所以那条守卫构造的是一个**任何读者都到不了的状态**
   - **这不否定上一轮的修复**——同一张卡把同一个量写成了两种说法（表格用 `first.Vocab`、标题打字 256），改成一处生成是对的，成本只有一次 `fmt.Sprintf`。但守卫的注释不能让人以为「-weights 可以加载 128 宽的词表」，这种误解比缺一条守卫更贵
-  - 新增 `TestVocabularyIsPinnedToByteVocab` 把这条不对称钉住：vocab 必须被拒且错误信息点名两个数；同时把三个**可达**字段的副本往返 `Parse` 一次，要求全部通过。两种破坏性验证各报各的：放开 vocab 限制 → `Parse accepted vocab 128 … the vocab sweep in internal/app is reachable now and its comment needs rewriting`；把 ctx 改成只接受 64 → `Parse rejected a ctx copy … its guard comment needs the same caveat the vocab one now carries`
+  - 新增 `TestVocabularyIsPinnedToByteVocab`（第 5 轮改名为 `TestWhichConfigFieldsWeightsCanVary`，范围从三个字段扩到五个）把这条不对称钉住：vocab 必须被拒且错误信息点名两个数；同时把当时列的三个**可达**字段的副本往返 `Parse` 一次，要求全部通过。两种破坏性验证各报各的：放开 vocab 限制 → `Parse accepted vocab 128 … the vocab sweep in internal/app is reachable now and its comment needs rewriting`；把 ctx 改成只接受 64 → `Parse rejected a ctx copy … its guard comment needs the same caveat the vocab one now carries`
   - `TestNoStageNamesTheBundleVocabulary` 的注释重写成如实版本：明说这个状态当前不可达、为什么仍然值得留着（同一个量的两种说法、以及 `ByteVocab` 是常量而非自然规律——分词器若真有了词表，这条守卫已经就位，而那句可达性说明正是要改的地方）
   - **一个细节记下来**：`validate` 是未导出的方法，接在 `Weights` 上，只能经 `Parse` 到达。注释里写成 `model.validate` 是错的，已改为 `Weights.validate`（经 `Parse` 到达）
 - **手机布局逐张看过之后，修掉两处同一类缺陷：会在窄屏换行的那一行，仍按「第二列还在旁边」算宽度。**

@@ -3951,9 +3951,14 @@ func TestUnderflowNoteReachesTheCard(t *testing.T) {
 	joined := ""
 	for _, s := range tr.Texts() {
 		joined += s + "\n"
-		if strings.Contains(s, "+Inf") {
-			t.Fatalf("the card renders %q; an infinite loss is an arithmetic artefact, not a "+
-				"measurement the reader can use", s)
+		// The shared malformed-figure test. This one started as a check for "+Inf" alone,
+		// because that was the artefact it was written for: when the true byte's probability
+		// underflows to zero, -ln(0) has no finite value and the card showed "+Inf" where a
+		// loss belongs. There is no reason to keep looking for fewer markers than the other
+		// sweeps — measured, the shared set reports nothing on this card either.
+		if marker, bad := malformedFigure(s); bad {
+			t.Fatalf("the card renders %s in %q; an infinite loss is an arithmetic artefact, not "+
+				"a measurement the reader can use", marker, s)
 		}
 	}
 	want := fmt.Sprintf("%d 个位置的真实字节概率下溢到 0，未计入均值", cold.Underflowed)

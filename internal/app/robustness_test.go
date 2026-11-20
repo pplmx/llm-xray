@@ -119,12 +119,14 @@ func TestRandomWeightsRenderWithoutPoisoning(t *testing.T) {
 		a.Step = step
 		tr := ui.NewTester(a.View, 1180, 720)
 		tr.Frame()
+		// The shared malformed-figure test, not a narrower local one. A random checkpoint is
+		// where a division by a near-zero variance or an uninitialised slice would show up
+		// first, and there is no reason for this sweep to look for fewer markers than the
+		// others. Measured: the shared set reports nothing here, so the two agree today — the
+		// point of routing it through is that they keep agreeing.
 		for _, s := range tr.Texts() {
-			if strings.Contains(s, "因果掩码") {
-				continue
-			}
-			if strings.Contains(s, "NaN") || strings.Contains(s, "%!") {
-				t.Fatalf("step %d shows %q with random weights", step+1, s)
+			if marker, bad := malformedFigure(s); bad {
+				t.Fatalf("step %d shows %s in %q with random weights", step+1, marker, s)
 			}
 		}
 	}

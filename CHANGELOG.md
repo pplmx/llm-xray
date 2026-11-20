@@ -6,6 +6,13 @@
 
 ### Added
 
+- **README 的「七个阶段与代码的对应关系」表逐项核过：16 个函数名与 14 个结构体字段全部真实存在**，这张表今天是对的
+  - 但它是 README 里最容易被相信、又最容易过期的部分——读者照着某一行去 `tokenizer.go` 找 `Tokenize`、去 `workings.go` 找 `computeHeadProfiles`，而其它 README 测试读的都是行为描述，没有一条会碰标识符
+  - 新增 `TestReadmeStageTableNamesRealSymbols`：把表里每个反引号标识符抽出来，要求它被声明为函数、类型或结构体字段三者之一（`copy` 是语言内建，单独放行）
+  - **守卫第一版漏掉了表里大部分函数**：表格的写法是 `` `workings.go: computeHeadProfiles` ``，而我的正则只匹配纯标识符，于是带「文件名: 」前缀的条目全被跳过。实测把 `computeHeadProfiles` 改成 `computeHeadProfilez`，测试**仍然通过**
+  - **第二版又漏掉了带结构体前缀的字段**：`` `LayerTrace.Norm1` `` 同样不是纯标识符。实测改成 `LayerTrace.NormOne` 仍通过。正则改成允许多段点号、只取最后一段
+  - 修正后八个变异逐一验证：`computeHeadProfiles`、`computeHeadIndependence`、`Norm1`、`Scores`、`TokEmbed`、`nextByteSkill`、`Truncate`、`Forward`、`Probabilities` 各改成不存在的名字，全部报 `not declared anywhere: <新名>`
+  - **这是「守卫写得太松」的又一次实例**，而且连着两次：第一版按「函数名长什么样」写正则，恰好漏掉了这张表最主要的写法。判据应当是「反引号里出现的东西」，而不是「我认为标识符长什么样」
 - **「这一步不生效的控件」提示，函数本身有守卫，但「画在哪些阶段、有没有认错控件」没有。** `TestControlScopeNoteMatchesTheRanges` 证明那句说明是从 `layerFrom` / `headFrom` / `tempFrom` 三个常量拼出来的，但它不检查这句话出现在哪几个阶段，也不检查**已经生效的控件有没有被误列进去**
   - 这两件事会各自独立坏掉：`lesson()` 里那段 `off` 列表由三个取反的 `inStages` 调用拼成，反转任意一个，提示仍然存在、仍然通顺，只是点了名不对的控件
   - 新增 `TestInactiveControlNoteNamesExactlyTheOffKnobs`，在 1500×4000 下逐阶段读渲染文字，双向核对：被置灰的必须点名、生效的不许点名，并且每个被点名的控件都要给出它真正生效的步骤范围

@@ -1100,3 +1100,93 @@ func TestReadmePlayIntervalMatchesTheConstant(t *testing.T) {
 		t.Error("the README's autoplay row no longer says playback stops at the last stage")
 	}
 }
+
+// TestReadmeStageTableNamesRealSymbols keeps the stage-to-code table pointing at code that exists.
+//
+// The table is the README's claim that each screen's numbers can be traced: "每一行写成「界面读的是
+// 哪个字段 → 由哪个函数算出 → 写回哪个字段」… 左列可以直接对照界面上的数字". A reader follows a
+// row to tokenizer.go to find Tokenize, or to workings.go to find computeHeadProfiles. If a symbol
+// in that table is renamed, the row sends them to a name that is not in the repository — and
+// nothing else in the suite would notice, because every other README test reads prose about
+// behaviour rather than identifiers.
+//
+// The table is accurate today: all sixteen function names and all fourteen struct fields it cites
+// were checked by hand while writing this test. That is the reason it is worth pinning — a table
+// this specific, with no owner, is exactly the shape that goes stale silently.
+func TestReadmeStageTableNamesRealSymbols(t *testing.T) {
+	doc := readREADME(t)
+
+	i := strings.Index(doc, "| 界面阶段 | 公式 | 读 | 函数 | 写回 |")
+	if i < 0 {
+		t.Fatal("the README no longer has the stage-to-code table; update this test")
+	}
+	table := doc[i:]
+	if j := strings.Index(table, "\n\n"); j >= 0 {
+		table = table[:j]
+	}
+
+	// Every backticked identifier. Some cells prefix it with the file it lives in —
+	// "`workings.go: computeHeadProfiles`" — so the file name and the colon are part of the match
+	// and only the trailing identifier is kept.
+	//
+	// The first version of this pattern matched only a bare identifier between backticks, which
+	// silently skipped every row written in the file:function form — that is most of the 函数
+	// column. Verified: renaming computeHeadProfiles in the table left the test green until the
+	// prefix was handled.
+	// A cell may also qualify the field with its struct — "`LayerTrace.Norm1`" — so the type
+	// prefix is allowed and only the last segment is kept. Without that, a renamed field would be
+	// read as the untouched prefix and slip through: verified, "`LayerTrace.NormOne`" left the
+	// test green until the dotted form was handled.
+	ident := regexp.MustCompile("`(?:(?:[a-z_]+\\.go: )?(?:[A-Za-z_][A-Za-z0-9_]*\\.)*)([A-Za-z_][A-Za-z0-9_]*)`")
+	cited := map[string]bool{}
+	for _, m := range ident.FindAllStringSubmatch(table, -1) {
+		cited[m[1]] = true
+	}
+	if len(cited) < 20 {
+		t.Fatalf("the table cites only %d identifiers; the parser stopped matching or the table "+
+			"was rewritten", len(cited))
+	}
+
+	// What a symbol may be declared as: a function, a type, or a struct field. Fields are the
+	// majority in the 读/写回 columns, which is why they are checked here rather than ignored.
+	var all strings.Builder
+	for _, dir := range []string{".", "../model"} {
+		files, err := filepath.Glob(filepath.Join(dir, "*.go"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range files {
+			if strings.HasSuffix(f, "_test.go") {
+				continue
+			}
+			b, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatalf("read %s: %v", f, err)
+			}
+			all.Write(b)
+		}
+	}
+	src := all.String()
+
+	// Go builtins and language keywords the table legitimately names.
+	builtin := map[string]bool{"copy": true}
+
+	var missing []string
+	for name := range cited {
+		if builtin[name] {
+			continue
+		}
+		declared := regexp.MustCompile(`\bfunc (?:\([^)]*\) )?`+regexp.QuoteMeta(name)+`\b`).MatchString(src) ||
+			regexp.MustCompile(`\btype `+regexp.QuoteMeta(name)+`\b`).MatchString(src) ||
+			regexp.MustCompile(`(?m)^\s*`+regexp.QuoteMeta(name)+`\s`).MatchString(src)
+		if !declared {
+			missing = append(missing, name)
+		}
+	}
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		t.Fatalf("the stage-to-code table cites %d symbol(s) that are not declared anywhere: %s\n"+
+			"Either the symbol was renamed (update the row) or the row now describes something "+
+			"else (rewrite it).", len(missing), strings.Join(missing, ", "))
+	}
+}

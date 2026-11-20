@@ -2032,3 +2032,73 @@ func TestEscapeClearsAllThreeStatesAtOnce(t *testing.T) {
 		t.Errorf("Esc left the per-position prediction pinned at %d", a.PredSel)
 	}
 }
+
+// TestRightKeyTellsTheControlsApart backs the guide's warning about measuring focus rings.
+//
+// CONTRIBUTING says not to identify a Tab stop by pressing Right and watching which field
+// changed: Right does nothing in the text field, moves Layer in one segmented control and Head
+// in the other, and does nothing on a button — so several stops look identical. That warning is
+// only useful if the asymmetry is real, and nothing asserted it.
+//
+// Verified by stopping Tab on each control and pressing Right once. The positions are from the
+// guide's own measured table for stage 3 (stops 4 and 5 are the two segmented controls); if that
+// order ever changes, this test fails where the table would too.
+func TestRightKeyTellsTheControlsApart(t *testing.T) {
+	tabTo := func(a *App, tr *ui.Tester, n int) {
+		t.Helper()
+		for i := 0; i < n; i++ {
+			tr.Key(0, ui.KeyTab)
+			tr.Frame()
+		}
+	}
+
+	// Stop 4 is the layer control: Right moves Layer and leaves Head alone.
+	a := newTestApp(t)
+	a.Step = 2
+	tr := ui.NewTester(a.View, 1180, 720)
+	tr.Frame()
+	tabTo(a, tr, 4)
+	beforeLayer, beforeHead := a.Layer, a.Head
+	tr.Key(0, ui.KeyRight)
+	tr.Frame()
+	if a.Layer == beforeLayer {
+		t.Fatalf("Right on Tab stop 4 did not move Layer (still %d); the guide's table says "+
+			"this stop is the layer control", a.Layer)
+	}
+	if a.Head != beforeHead {
+		t.Fatalf("Right on the layer control also moved Head to %d; the two controls have to "+
+			"be distinguishable this way for the guide's warning to hold", a.Head)
+	}
+
+	// Stop 5 is the head control: Right moves Head and leaves Layer alone.
+	b := newTestApp(t)
+	b.Step = 2
+	trb := ui.NewTester(b.View, 1180, 720)
+	trb.Frame()
+	tabTo(b, trb, 5)
+	beforeLayer, beforeHead = b.Layer, b.Head
+	trb.Key(0, ui.KeyRight)
+	trb.Frame()
+	if b.Head == beforeHead {
+		t.Fatalf("Right on Tab stop 5 did not move Head (still %d); the guide's table says "+
+			"this stop is the head control", b.Head)
+	}
+	if b.Layer != beforeLayer {
+		t.Fatalf("Right on the head control also moved Layer to %d", b.Layer)
+	}
+
+	// Stop 1 is the prompt field: Right moves the caret, not any App state.
+	c := newTestApp(t)
+	c.Step = 2
+	trc := ui.NewTester(c.View, 1180, 720)
+	trc.Frame()
+	tabTo(c, trc, 1)
+	beforePrompt, beforeSel := c.Prompt, c.SelToken
+	trc.Key(0, ui.KeyRight)
+	trc.Frame()
+	if c.Prompt != beforePrompt || c.SelToken != beforeSel {
+		t.Fatalf("Right in the prompt field changed App state (prompt %v, SelToken %d → %d); "+
+			"the guide relies on it changing nothing", c.Prompt != beforePrompt,
+			beforeSel, c.SelToken)
+	}
+}

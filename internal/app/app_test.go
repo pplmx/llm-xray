@@ -10302,3 +10302,70 @@ func TestClearPointerResetsEveryHoverField(t *testing.T) {
 		}
 	}
 }
+
+// TestClampPinnedCellCoversEveryBoundary pins all four of clampPinnedCell's branches.
+//
+// The function had no test of its own. Three branches were covered incidentally — removing the
+// KeyQ-overflow, the KeyK>KeyQ or the n==0 branch made other tests fail — but deleting the
+// `KeyK < 0` clamp left the entire suite green (measured: 371s, all passing), so that line was
+// untested.
+//
+// Its reachability is worth stating rather than assuming. Every UI path to a pinned cell goes
+// through moveCursor, which already clamps k to [0, q]; the negative branch therefore only fires
+// for a caller that sets the fields directly, which is what the test below does. It is kept
+// because clampPinnedCell's contract is "whatever is pinned stays inside the triangle", and a
+// future caller that sets KeyQ without KeyK would otherwise draw outside it — but the test says
+// plainly that it is exercising the contract rather than a route a reader can take.
+func TestClampPinnedCellCoversEveryBoundary(t *testing.T) {
+	// n == 0 (no tokens): the pin is dropped entirely.
+	t.Run("no tokens drops the pin", func(t *testing.T) {
+		a := newTestApp(t)
+		a.applyPrompt("")
+		a.KeyQ, a.KeyK = 3, 2
+		a.clampPinnedCell()
+		if a.KeyQ != -1 || a.KeyK != -1 {
+			t.Fatalf("with no tokens the pin should be dropped, got (%d,%d)", a.KeyQ, a.KeyK)
+		}
+	})
+
+	// No pin at all: nothing to do, and the function must not invent one.
+	t.Run("no pin stays unpinned", func(t *testing.T) {
+		a := newTestApp(t)
+		a.KeyQ, a.KeyK = -1, -1
+		a.clampPinnedCell()
+		if a.KeyQ != -1 || a.KeyK != -1 {
+			t.Fatalf("an empty pin became (%d,%d)", a.KeyQ, a.KeyK)
+		}
+	})
+
+	// KeyQ past the end of a shrunk window is clamped to the last token.
+	t.Run("query past the end is clamped", func(t *testing.T) {
+		a := newTestApp(t)
+		n := len(a.Trace.Tokens)
+		a.KeyQ, a.KeyK = n+10, 3
+		a.clampPinnedCell()
+		if a.KeyQ != n-1 {
+			t.Fatalf("query %d should clamp to %d, got %d", n+10, n-1, a.KeyQ)
+		}
+	})
+
+	// KeyK past KeyQ is pulled back to the row: the matrix is a triangle.
+	t.Run("key past the query is clamped", func(t *testing.T) {
+		a := newTestApp(t)
+		a.KeyQ, a.KeyK = 4, 9
+		a.clampPinnedCell()
+		if a.KeyK != 4 {
+			t.Fatalf("key 9 on query 4 should clamp to 4, got %d", a.KeyK)
+		}
+	})
+
+	// A negative key on a valid query is lifted to 0 — the one branch nothing else exercised.
+	t.Run("negative key is lifted to zero", func(t *testing.T) {
+		a := newTestApp(t)
+		a.KeyQ, a.KeyK = 5, -1
+		a.clampPinnedCell()
+		if a.KeyQ != 5 || a.KeyK != 0 {
+			t.Fatalf("(%d,-1) should become (5,0), got (%d,%d)", 5, a.KeyQ, a.KeyK)
+		}
+	})
+}

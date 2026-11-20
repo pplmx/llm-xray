@@ -1,6 +1,9 @@
 package app
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 // TestClampIndexContract pins all four answers and the trap in the n == 0 one.
 //
@@ -37,5 +40,107 @@ func TestClampIndexContract(t *testing.T) {
 	if i := clampIndex(-1, 0); i < 0 {
 		t.Fatalf("clampIndex(-1, 0) = %d; it answers 0, and stages that rely on `i >= 0` to mean "+
 			"\"there are tokens\" are wrong — they are safe only because stage() returns first", i)
+	}
+}
+
+// TestMaxAbsFloatAnchorsTheVectorStrip pins the scale the strip's colours are drawn against.
+//
+// vectorStrip passes maxAbsFloat(v) to valueColor for every cell, so this one number decides
+// whether the strip shows relative magnitude at all. Replacing the body with `return 0` left the
+// whole suite green: no test looks at the strip's pixels, and valueColor's degenerate branch
+// (maxAbs <= 0 paints every cell colFaint at 0.25) is silent in Texts().
+//
+// Two things make it worth a unit test rather than a screenshot. The function is pure, so the
+// assertions are exact. And zero is a real input: an all-zero vector has maxAbs 0, and painting
+// it faint is the intended answer rather than a defect — which is why the degenerate branch
+// exists and why the guard has to distinguish "no magnitude" from "forgot to measure".
+func TestMaxAbsFloatAnchorsTheVectorStrip(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []float32
+		want float32
+	}{
+		{"empty", nil, 0},
+		{"all zero", []float32{0, 0, 0}, 0},
+		{"positive", []float32{1, 2, 3}, 3},
+		{"negative dominates", []float32{-5, 1, 2}, 5},
+		{"symmetric", []float32{-4, 4}, 4},
+		{"single negative", []float32{-0.25}, 0.25},
+	}
+	for _, c := range cases {
+		if got := maxAbsFloat(c.in); got != c.want {
+			t.Errorf("%s: maxAbsFloat(%v) = %v, want %v", c.name, c.in, got, c.want)
+		}
+	}
+
+	// And the property the strip depends on: whatever the input, no cell's colour can be
+	// saturated by a value this scale did not account for.
+	v := []float32{-7.5, 0.4, 3.1, -0.2}
+	maxAbs := maxAbsFloat(v)
+	for _, x := range v {
+		if math.Abs(float64(x)) > float64(maxAbs) {
+			t.Fatalf("maxAbsFloat(%v) = %v, smaller than |%v|; valueColor would clamp "+
+				"that cell and flatten the rest of the strip", v, maxAbs, x)
+		}
+	}
+}
+
+// TestValueColorIsSymmetricAndDegenerateSafely pins the strip's colour mapping.
+//
+// valueColor turns a signed value and a scale into an alpha on a red/blue ramp. It had no test:
+// the only mentions of its name were in comments. Three properties matter, and each fails
+// silently on screen rather than in Texts().
+//
+//   - Sign picks the hue: positive uses colPos (warm), negative colNeg.
+//   - Magnitude maps monotonically onto alpha, saturating at the scale.
+//   - A non-positive scale paints every cell faint rather than dividing by zero.
+//
+// The last one is the interesting case. It is also what an all-zero vector legitimately looks
+// like, so the branch has to be reached by a real input and not only by a bug — the test covers
+// both: the degenerate scale directly, and a zero vector through maxAbsFloat.
+func TestValueColorIsSymmetricAndDegenerateSafely(t *testing.T) {
+	const scale = 4
+
+	// A non-positive scale must not reach the division.
+	for _, maxAbs := range []float32{0, -1} {
+		got := valueColor(3, maxAbs)
+		want := colFaint.Alpha(0.25)
+		if got != want {
+			t.Errorf("valueColor(3, %v) = %+v, want the faint fallback %+v", maxAbs, got, want)
+		}
+	}
+
+	// Sign picks the ramp.
+	if pos, neg := valueColor(2, scale), valueColor(-2, scale); pos == neg {
+		t.Fatalf("+2 and -2 share a colour %+v; the strip cannot show sign", pos)
+	}
+
+	// Magnitude is monotonic, and saturates at the scale instead of running past it.
+	prev := valueColor(0, scale)
+	for _, v := range []float32{0.5, 1, 2, 3, 4} {
+		cur := valueColor(v, scale)
+		if cur.A < prev.A {
+			t.Fatalf("alpha fell from %v to %v going from a smaller value to %v; the ramp "+
+				"must not invert", prev.A, cur.A, v)
+		}
+		prev = cur
+	}
+	// A value at the scale reaches the top of the ramp.
+	//
+	// Saturation past the scale is NOT asserted, deliberately. A colour's alpha is a byte, so
+	// 0.10 + 0.90*t is clamped to 255 by the conversion on its own — measured: deleting
+	// valueColor's explicit `if t > 1 { t = 1 }` leaves valueColor(40, 4) byte-identical to
+	// valueColor(4, 4), so any assertion written here would pass either way. The explicit clamp
+	// keeps the arithmetic in range for a future consumer that wants the ratio rather than the
+	// colour; that is a readability choice, and a test that cannot fail does not protect it.
+	at := valueColor(scale, scale)
+	if at.A != 255 {
+		t.Fatalf("a value at the scale gives alpha %v, not the top of the ramp", at.A)
+	}
+
+	// And an all-zero vector takes the degenerate branch through the real caller chain.
+	if got := valueColor(0, maxAbsFloat([]float32{0, 0, 0})); got != colFaint.Alpha(0.25) {
+		t.Fatalf("a zero vector paints %+v; the strip should read as empty, not as an extreme",
+			got)
 	}
 }

@@ -6,6 +6,12 @@
 
 ### Added
 
+- **`maxAbsFloat` 改成恒返回 0，整套测试一条都没红。** 它是 `vectorStrip` 每格颜色的**色深上限**，退化后 `valueColor(v, 0)` 会让整条色带变成同一片淡灰——屏幕上明显可见，而 `Texts()` 里什么也看不到，正是 CONTRIBUTING「测不到的东西」第 2 条说的那类
+  - 这个函数是**纯函数**，不必靠截图。新增 `TestMaxAbsFloatAnchorsTheVectorStrip`：空、全零、正负混合、负值主导等六种输入，外加「任何分量的绝对值都不超过返回值」这条 `vectorStrip` 真正依赖的性质
+  - 破坏性验证：还原成 `return 0` → `positive: maxAbsFloat([1 2 3]) = 0, want 3`；去掉取绝对值那两行 → `negative dominates: maxAbsFloat([-5 1 2]) = 2`
+- **`valueColor` 同样没有测试，名字只在注释里出现过。** 新增 `TestValueColorIsSymmetricAndDegenerateSafely`，钉住三条性质：符号决定色相、量级随 alpha 单调、`maxAbs <= 0` 走淡色兜底而不是除零
+  - 破坏性验证：去掉兜底 → `want the faint fallback`；去掉负号分支 → `share a colour … cannot show sign`
+  - **一条自己写错又删掉的断言**：本想验证「超过上限就饱和」，实测发现 `Color.A` 是字节，`0.10 + 0.90*t` 自己就会截断到 255——`valueColor(40, 4)` 与 `valueColor(4, 4)` 逐字节相同，所以去掉 `if t > 1 { t = 1 }` 后那条断言仍然通过。**不能失败的断言不保护任何东西**，改为在注释里说明为什么不测这一点
 - **`clampIndex` 没有测试，而它的 `n == 0` 分支在任何输入下都走不到。** 上一轮扫出的四个纯函数里剩下的一个
   - 逐个删分支实测：删掉 `i < 0` 或 `i >= n` 会让别的测试失败，**删掉 `n == 0` 则全无反应**
   - 原因查清了：**四个调用点全都排在「空 trace 就返回」之后**——`stage()` 在 `len(tr.Tokens) == 0` 时先返回 `emptyPromptCard(c)`，`stepToken` 也有自己的空检查。所以应用里 `n` 永远不是 0

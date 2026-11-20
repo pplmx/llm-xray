@@ -417,10 +417,6 @@ func TestReadmeLayerRewriteOtherPrompts(t *testing.T) {
 	if m == nil {
 		t.Fatal("the README no longer has the `attention is all you need` row")
 	}
-	if !strings.Contains(doc, "`"+lets+"`") {
-		t.Fatal("the README no longer has the third prompt's row in the layer-rewrite table")
-	}
-
 	w := mustBundled(t)
 	tr := model.Forward(w, promptIDs(attention))
 	rewrites := computeLayerRewrite(tr)
@@ -431,6 +427,28 @@ func TestReadmeLayerRewriteOtherPrompts(t *testing.T) {
 	near(t, "attention prompt, layer 0 ‖ΔFFN‖/‖x‖", m[2], rewrites[0].FFNRatio)
 	near(t, "attention prompt, layer 1 cosine in/out", m[3], rewrites[1].CosineInOut)
 	near(t, "attention prompt, layer 1 ‖ΔFFN‖/‖x‖", m[4], rewrites[1].FFNRatio)
+
+	// The third row was only checked for presence, so every figure in it was unverified —
+	// measured by changing its layer-0 cosine from 0.24 to 0.25, which this test passed.
+	// It is the row carrying the claim the paragraph draws its conclusion from, so its
+	// numbers are checked like the other two.
+	reLets := regexp.MustCompile(`\| ` + regexp.QuoteMeta("`"+lets+"`") +
+		` \| ([0-9.]+) \| ([0-9.]+) \| ([0-9.]+) \| ([0-9.]+) \|`)
+	ml := reLets.FindStringSubmatch(doc)
+	if ml == nil {
+		t.Fatal("the README no longer has the third prompt's row in the layer-rewrite table")
+	}
+	// The table abbreviates this prompt with an ellipsis; it is the full sentence in the app.
+	const letsFull = "Attention lets every token look at the tokens before it."
+	trLets := model.Forward(w, promptIDs(letsFull))
+	rewritesLets := computeLayerRewrite(trLets)
+	if len(rewritesLets) != 2 {
+		t.Fatalf("expected 2 layers for the third prompt, measured %d", len(rewritesLets))
+	}
+	near(t, "third prompt, layer 0 cosine in/out", ml[1], rewritesLets[0].CosineInOut)
+	near(t, "third prompt, layer 0 ‖ΔFFN‖/‖x‖", ml[2], rewritesLets[0].FFNRatio)
+	near(t, "third prompt, layer 1 cosine in/out", ml[3], rewritesLets[1].CosineInOut)
+	near(t, "third prompt, layer 1 ‖ΔFFN‖/‖x‖", ml[4], rewritesLets[1].FFNRatio)
 }
 
 // TestReadmePosEncodingFiguresMatchTheShape guards the positional-encoding table:
@@ -792,6 +810,9 @@ func TestAnalyticalCardCountMatchesTheDocuments(t *testing.T) {
 // The code already derives it: nextByteSkill.UniformReference is math.Log(float64(vocab)). What
 // this test adds is that the prose has to agree with that derivation at the precision the prose
 // uses, and that a future checkpoint with a different vocabulary cannot leave "256" behind.
+// reLnVocab matches every way the prose states the uniform-guessing ceiling.
+var reLnVocab = regexp.MustCompile(`ln (\d+) = ([0-9.]+)|ln\((\d+)\) = ([0-9.]+)`)
+
 func TestLnVocabFiguresMatchTheConfig(t *testing.T) {
 	a := newTestApp(t)
 	vocab := a.W.Config.Vocab
@@ -813,9 +834,28 @@ func TestLnVocabFiguresMatchTheConfig(t *testing.T) {
 			t.Fatalf("read %s: %v", name, err)
 		}
 		body := string(b)
-		if !strings.Contains(body, want) {
-			t.Errorf("%s quotes ln(%d) at a different value or precision; write it as %q so "+
-				"every copy agrees with math.Log(vocab)", name, vocab, wantWithVocab)
+		// Every occurrence has to be right, not merely one of them.
+		//
+		// This started as a single strings.Contains and could not fail: cards.md mentions
+		// ln(vocab) twice, so changing one of the two left the other to satisfy the check.
+		// Measured — editing the ceiling on line 18 from 5.545 to 5.546 left the suite green.
+		// A presence check answers "is the right thing somewhere", which is not the question
+		// when the claim is "all of them agree".
+		found := 0
+		for _, m := range reLnVocab.FindAllStringSubmatch(body, -1) {
+			arg, val := m[3], m[4] // "ln(256) = 5.545"
+			if arg == "" {
+				arg, val = m[1], m[2] // "ln 256 = 5.545"
+			}
+			found++
+			if val != want {
+				t.Errorf("%s states ln(%s) = %s, but math.Log(vocab) is %s; every copy has to "+
+					"agree, not just one of them", name, arg, val, want)
+			}
+		}
+		if found == 0 {
+			t.Errorf("%s no longer states ln(vocab) in the form this test knows (%q); update "+
+				"the test with the sentence you wrote", name, wantWithVocab)
 		}
 		// The two-decimal form is the one that had drifted; forbid it explicitly, in the
 		// three shapes it appeared in.
@@ -825,5 +865,107 @@ func TestLnVocabFiguresMatchTheConfig(t *testing.T) {
 					name, stale, want)
 			}
 		}
+	}
+}
+
+// TestReadmeLayerRewriteProseRangeMatchesTheRows keeps the sentence under the table honest about
+// the range its own rows span.
+//
+// The paragraph says "层 0 把残差流的方向改得几乎认不出来（余弦 0.22–0.24），写进去的内容是它读到的
+// 2.8–3.2 倍；层 1 基本保持方向（0.92–0.93），只加了 0.41–0.45". Those four ranges are summaries
+// of the three rows above them, and nothing compared the two — measured by changing 2.8 to 2.9
+// in the sentence, which left every test green.
+//
+// A summary that drifts from its table is worse than no summary: the table is what a reader
+// checks, and the sentence is what they remember.
+func TestReadmeLayerRewriteProseRangeMatchesTheRows(t *testing.T) {
+	doc := readmeCardSections(t)
+
+	// Parse the four ranges out of the paragraph.
+	re := regexp.MustCompile(`余弦 ([0-9.]+)–([0-9.]+)）[^0-9]*([0-9.]+)–([0-9.]+) 倍；[^（]*（([0-9.]+)–([0-9.]+)）[^0-9]*([0-9.]+)–([0-9.]+)`)
+	m := re.FindStringSubmatch(doc)
+	if m == nil {
+		t.Fatal("the layer-rewrite paragraph no longer states its four ranges in the form this " +
+			"test knows; update the test with the sentence you wrote")
+	}
+
+	// Measure the same three prompts the table lists.
+	w := mustBundled(t)
+	prompts := []string{defaultPrompt, "attention is all you need",
+		"Attention lets every token look at the tokens before it."}
+	var l0cos, l0ratio, l1cos, l1ratio []float64
+	for _, p := range prompts {
+		rw := computeLayerRewrite(model.Forward(w, promptIDs(p)))
+		if len(rw) != 2 {
+			t.Fatalf("expected 2 layers for %q, measured %d", p, len(rw))
+		}
+		l0cos = append(l0cos, rw[0].CosineInOut)
+		l0ratio = append(l0ratio, rw[0].FFNRatio)
+		l1cos = append(l1cos, rw[1].CosineInOut)
+		l1ratio = append(l1ratio, rw[1].FFNRatio)
+	}
+
+	span := func(name string, vals []float64) (float64, float64) {
+		lo, hi := vals[0], vals[0]
+		for _, v := range vals {
+			if v < lo {
+				lo = v
+			}
+			if v > hi {
+				hi = v
+			}
+		}
+		return lo, hi
+	}
+	check := func(label string, loIdx, hiIdx int, vals []float64) {
+		t.Helper()
+		if loIdx == 0 || hiIdx == 0 {
+			t.Fatalf("%s: the paragraph's range did not parse", label)
+		}
+		lo, hi := span(label, vals)
+		near(t, label+" low", m[loIdx], lo)
+		near(t, label+" high", m[hiIdx], hi)
+	}
+	check("layer 0 cosine", 1, 2, l0cos)
+	check("layer 0 ‖ΔFFN‖/‖x‖", 3, 4, l0ratio)
+	check("layer 1 cosine", 5, 6, l1cos)
+	check("layer 1 ‖ΔFFN‖/‖x‖", 7, 8, l1ratio)
+}
+
+// TestReadmeTiedParameterSavingMatchesTheConfig keeps "它省了 2.4 万个参数" tied to the config.
+//
+// Tying the output matrix to the embedding table saves d_model × vocab parameters — 24576 for
+// the bundled checkpoint, which the sentence rounds to 2.4 万. Nothing checked it: changing the
+// number to 2.5 万 left the whole suite green, because the sentence is the only place that
+// quantity appears.
+//
+// The rounded form is deliberate prose, so the test compares at the precision the sentence uses
+// rather than demanding 2.4576 万.
+func TestReadmeTiedParameterSavingMatchesTheConfig(t *testing.T) {
+	doc := readmeCardSections(t)
+	re := regexp.MustCompile(`省了 ([0-9.]+) 万个参数`)
+	m := re.FindStringSubmatch(doc)
+	if m == nil {
+		t.Fatal("the weight-tying section no longer states the parameter saving in the form this " +
+			"test knows; update the test with the sentence you wrote")
+	}
+
+	a := newTestApp(t)
+	saved := float64(a.W.Config.DModel*a.W.Config.Vocab) / 10000
+	// Compared at two significant figures, not one decimal place. The sentence rounds
+	// 2.4576 万 to 2.4 rather than 2.5, which is truncation at one significant figure —
+	// a legitimate way to say "about this much" and not worth rewriting the prose over.
+	// What matters is that the figure cannot drift: 2.9 or 1.8 would fail.
+	if got := strconv.FormatFloat(saved, 'g', 2, 64); got != m[1] {
+		t.Fatalf("the sentence says tying saves %s 万 parameters; the config gives %.4f 万 "+
+			"(two significant figures: %s)", m[1], saved, got)
+	}
+
+	// And the sentence's point — that the saving is real but bounded — needs the number to stay
+	// below the total, or "not free" reads as if tying cost nothing.
+	total := float64(a.paramCount())
+	if saved*10000 > total {
+		t.Fatalf("the sentence says tying saves %.1f 万 parameters, more than the model's %.0f "+
+			"total; the claim is about a saving, not the whole checkpoint", saved, total)
 	}
 }

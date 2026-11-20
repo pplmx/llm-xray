@@ -693,6 +693,12 @@
 
 ### Fixed
 
+- **穷举 `docs/cards.md` 的 53 个小数，找出四处没有任何测试会失败的。** 做法是逐个改掉最后一位、跑 `TestReadme|TestCards|TestAnalytical`，看谁不响
+  - **第三行提示词的四个数**（`0.24 / 2.78 / 0.92 / 0.45`）：`TestReadmeLayerRewriteOtherPrompts` 对第一行逐数核对、对第二行也核对，**对第三行只查了它存在**（`strings.Contains`）。改 `0.24` 成 `0.25` 全绿——与第 31 轮那个形状卡片测试同一种病
+  - **正文里那四个范围**（余弦 `0.22–0.24`、`2.8–3.2` 倍、`0.92–0.93`、`0.41–0.45`）：它们是表格三行的摘要，但没有人拿摘要和表格比过。改 `2.8` 成 `2.9` 全绿。新增 `TestReadmeLayerRewriteProseRangeMatchesTheRows` 从三行的实测值推出上下界再与正文比
+  - **「省了 2.4 万个参数」**：`d_model × vocab = 24576 = 2.4576 万`，四舍五入应是 **2.5 万**，文档写的是截断后的 2.4。改成 2.5 并新增守卫（两位有效数字比较，`2.9` / `1.8` 都会红）
+  - **上一轮我自己的守卫也漏了**：`TestLnVocabFiguresMatchTheConfig` 用 `strings.Contains(body, want)`，而 `cards.md` 里 `5.545` 出现两次——改掉一处、另一处仍让它成立。改成正则**逐处核对**，三处各自改坏都能单独被抓到
+  - 穷举复跑：survivors 从 9 个降到 3 个，剩下 `0.00`（熵的描述值）、`1.00`（温度 T=1.00）、`5.545`（脚本变异没真正改动，实测会红）。**可测的数字现在全部有守卫**
 - **`ln 256` 这个常数在四处手写，精度还不一致。** `docs/cards.md` 两处、`stages.go` 注释两处，两处写 `5.545`、两处写 `5.55`——同一个值两种精度，读者对照时会疑惑代码用的是哪一个
   - 代码本身是对的：`nextByteSkill.UniformReference = math.Log(float64(w.Config.Vocab))`，且 `workings_test.go` 早就把这条推导钉住了。缺的是**散文跟推导对齐**这一层
   - 四处统一成三位小数 `5.545`，新增 `TestLnVocabFiguresMatchTheConfig`：先从 `math.Log(vocab)` 推出期望值，再要求 `cards.md` 与 `stages.go` 都用这个值，并**显式禁止两位小数那种写法**

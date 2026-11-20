@@ -756,16 +756,30 @@ func TestSidebarTitleMatchesTheBundleName(t *testing.T) {
 		t.Fatal("mygo.json no longer sets a name; the bundle has no identity to compare against")
 	}
 
-	// Every non-test source file that draws the sidebar or compact header title.
-	for _, file := range []string{"app.go", "compact.go"} {
+	// Every non-test source file is examined, not a hand-picked pair, so the check catches both
+	// directions: a draw site that lost the name, and a file that started drawing it without
+	// being added to the list.
+	//
+	// The two sites that draw it are the desktop sidebar (app.go) and the phone header
+	// (compact.go). Measured today: the literal appears exactly once in each and nowhere else.
+	// If a third draw site appears, `holders` grows and the assertion below fails until this
+	// comment and the expected pair are updated together.
+	quoted := strconv.Quote(cfg.Name)
+	var holders []string
+	for _, file := range sourceFiles(t) {
 		src, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatalf("read %s: %v", file, err)
 		}
-		if !strings.Contains(string(src), strconv.Quote(cfg.Name)) {
-			t.Fatalf("%s does not draw the title %q that mygo.json names the bundle; the app "+
-				"opens under one name inside a package called another", file, cfg.Name)
+		if strings.Contains(string(src), quoted) {
+			holders = append(holders, file)
 		}
+	}
+	want := []string{"app.go", "compact.go"}
+	if strings.Join(holders, ",") != strings.Join(want, ",") {
+		t.Fatalf("the title %q is drawn by %v, but the expected sites are %v — either a draw "+
+			"site lost the name or a new one appeared; update both this list and the comment "+
+			"that names the desktop sidebar and the phone header", cfg.Name, holders, want)
 	}
 
 	// And the rendered title has to be findable, not merely present in the source: a string built

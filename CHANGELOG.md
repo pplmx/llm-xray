@@ -693,6 +693,11 @@
 
 ### Fixed
 
+- **最后一处手写文件清单是 `TestSidebarTitleMatchesTheBundleName` 的 `{"app.go", "compact.go"}`。** 它和上一轮那三处不同：这一份**列对了**——标题确实只在这两个文件里画（实测两个文件各出现一次，别处没有）
+  - 但它只查「这两处有没有」，不查「有没有第三处」。新增一个绘制点时，这个守卫不会说话
+  - 改成**枚举整包**并比较持有者集合：`holders` 与预期的两个文件必须完全一致。这样两个方向都覆盖——某处丢了标题、或多出一处
+  - 破坏性验证三例：只改 `compact.go` → 报 `is drawn by [app.go]`；往 `theme.go` 加一个持有者 → 报 `is drawn by [app.go compact.go theme.go]`；改掉 `app.go` → 报 `is drawn by [compact.go]`。每次报的都是**实际持有者列表**，不必再猜是哪一处
+  - 至此测试里再没有手写的 `.go` 文件名清单（枚举脚本确认只剩这一处，已改）
 - **三个「扫源码找约定」的守卫各自写死了一份文件清单，而包里实际有七个文件。** `TestSpacingValuesComeFromASmallSet` 列了 3 个、`TestDataColoursAreNotUsedOnText` 列了 4 个、`TestTooltipNumberingMatchesTheVisibleUI` 列了 3 个；`compact.go` **在三份清单里全都缺席**
   - 实测两个注入都被漏过：在 `compact.go` 里写 `.Gap(13)`（13 不在允许的间距集合里）→ 测试通过；把一个文本标签改成 `colGreen`（数据色不许用在文字上）→ 测试也通过。**今天没有违规纯属巧合**，那两个文件里现有的间距值正好都在集合内
   - 修法：新增 `sourceFiles(t)`，用 `filepath.Glob` 枚举包内非测试文件，三处改为调用它。这样**新增文件当下就被覆盖**，不必等谁想起来把它加进清单

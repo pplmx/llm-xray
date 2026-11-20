@@ -678,6 +678,12 @@
 
 ### Fixed
 
+- **README 与 `docs/cards.md` 都说「八张『多问了一步』的卡片」，实际是十张。** 两处都写着同一个过期数字，而没有任何测试会重新数它
+  - 判据从代码取：`stages.go` 里被调用的分析型 `compute*` 函数有十个（logit lens、权重绑定、位置编码形状、头画像、头独立性、掩码反事实、嵌入结构、FFN 答案方向、FFN 集中度、层间改写），每个正好对应一张卡片；`docs/cards.md` 的 `##` 章节也是十个——**两侧都指向 10**，只有那两句话停在 8
+  - 新增 `TestAnalyticalCardCountMatchesTheDocuments`：先从 `stages.go` 数出实际张数，再要求两份文档都用那个数（中文数字按现有写法拼出），最后要求 `cards.md` 的章节数与之相等
+  - 这道守卫不只抓「数字写错」，也抓「文档与界面描述的集合不同」——第三种破坏性验证就是删掉 `cards.md` 的一个章节，报 `has 9 ## sections for 10 analytical cards`
+  - 破坏性验证三次：README 改回「八张」、`cards.md` 改回「八张」、删掉 `cards.md` 一节，三者各自报出不同的话
+  - 顺带确认 `MYGO_DOCS_IMAGES=1` 仍然通过——这次只动正文，六张截图不受影响
 - **README 说自动播放「每 1.3 秒一步」，而 `playStepInterval` 改成多少都没有测试会红。** 实测把常量从 1300ms 改成 2000ms，整个包照样全绿——文档写的节奏与实际节奏每步差 0.7 秒，而 README 那张键盘表正是读者决定「要不要按空格看一遍」的地方，这个数是有分量的
   - 新增 `TestReadmePlayIntervalMatchesTheConstant`，用与上一轮淡入时长**同一种派生方式**：期望串由 `playStepInterval.Seconds()` 拼出，常量一改就报出「现在该写成多少」，而不是再对一份字面量
   - 顺带把同一行承诺的行为（「播到第 7 步停止」）也纳入检查，并指向真正覆盖它的 `TestPlaybackStopsAtTheEnd`

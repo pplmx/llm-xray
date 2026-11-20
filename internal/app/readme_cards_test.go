@@ -716,3 +716,66 @@ func TestReadmeFFNHistogramFiguresMatchTheRow(t *testing.T) {
 			got, axisShare)
 	}
 }
+
+// TestAnalyticalCardCountMatchesTheDocuments keeps "十张「多问了一步」的卡片" honest in both places
+// that state it.
+//
+// The README and docs/cards.md's introduction both said 八张. There are ten: one card per
+// analytical compute* function called from stages.go, and docs/cards.md has exactly ten ##
+// sections describing them. Measured — the ten functions are computeLogitLens,
+// computeWeightTying, computePosEncodingShape, computeHeadProfiles, computeHeadIndependence,
+// computeMaskCounterfactual, computeEmbeddingStructure, computeFFNAnswerDirection,
+// computeAllFFNConcentration and computeLayerRewrite.
+//
+// The count is a number written beside a list, which is the shape that goes stale: the two cards
+// added last were described in prose and nothing re-derived how many there were. Both statements
+// are checked here, and the expected figure comes from the code, not from a third literal.
+func TestAnalyticalCardCountMatchesTheDocuments(t *testing.T) {
+	// The analytical cards, identified by the compute function each one draws.
+	analytical := []string{
+		"computeLogitLens", "computeWeightTying", "computePosEncodingShape",
+		"computeHeadProfiles", "computeHeadIndependence", "computeMaskCounterfactual",
+		"computeEmbeddingStructure", "computeFFNAnswerDirection",
+		"computeAllFFNConcentration", "computeLayerRewrite",
+	}
+	src, err := os.ReadFile("stages.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, fn := range analytical {
+		if regexp.MustCompile(`\b` + fn + `\(`).Match(src) {
+			n++
+		}
+	}
+	if n < 8 {
+		t.Fatalf("only %d of the known analytical compute functions are called from stages.go; "+
+			"either cards were removed or this list needs updating", n)
+	}
+
+	cn := [...]string{"零", "一", "两", "三", "四", "五", "六", "七", "八", "九", "十",
+		"十一", "十二", "十三", "十四", "十五"}
+	if n >= len(cn) {
+		t.Fatalf("%d analytical cards is past what this test can spell", n)
+	}
+	want := cn[n] + "张"
+
+	for _, doc := range []struct{ name, body string }{
+		{"README.md", readREADME(t)},
+		{"docs/cards.md", readmeCardSections(t)},
+	} {
+		if !strings.Contains(doc.body, want) {
+			t.Fatalf("%s does not say %s「多问了一步」的卡片, which is how many analytical compute "+
+				"functions stages.go draws (%d); the number beside that list has gone stale",
+				doc.name, want, n)
+		}
+	}
+
+	// And docs/cards.md must have one section per card, or the file describes a different set
+	// from the one the app draws.
+	sections := len(regexp.MustCompile(`(?m)^## `).FindAllString(readmeCardSections(t), -1))
+	if sections != n {
+		t.Fatalf("docs/cards.md has %d ## sections for %d analytical cards; the file and the app "+
+			"describe different sets", sections, n)
+	}
+}

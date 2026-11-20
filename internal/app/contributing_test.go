@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -602,5 +603,70 @@ func TestContributingPageLengthMatchesTheLayout(t *testing.T) {
 	if tallest > 8 {
 		t.Fatalf("the tallest stage (stage %d) measures %.2f screens, far past the four the "+
 			"guide states; update the sentence", tallestStep, tallest)
+	}
+}
+
+// TestContributingCodeMapNamesEverySourceFile keeps the guide's code map complete.
+//
+// The map is where someone who has just been handed this repository looks first — "which file
+// does what" — and it had drifted: internal/app/ was one row naming app.go, stages.go, widgets.go
+// and compact.go, so theme.go, window.go and workings.go were invisible. workings.go is the
+// largest file in the package and holds the arithmetic behind every worked derivation; a reader
+// following the map would not know it existed, and the natural first guess for "where is this
+// number computed" is stages.go, which only draws it.
+//
+// internal/model/ was a single row that did not mention the three matmul kernels at all, which
+// matter because which one runs depends on GOEXPERIMENT=simd.
+//
+// The check derives its list from the directory rather than from a second hand-written one, and
+// skips _test.go files deliberately: those are named after what they cover, and this file
+// already states that.
+func TestContributingCodeMapNamesEverySourceFile(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "CONTRIBUTING.md"))
+	if err != nil {
+		t.Fatalf("read CONTRIBUTING.md: %v", err)
+	}
+	doc := string(b)
+
+	i := strings.Index(doc, "## 代码地图")
+	if i < 0 {
+		t.Fatal("CONTRIBUTING no longer has a 代码地图 section; update this test with the heading " +
+			"you used")
+	}
+	rest := doc[i:]
+	if j := strings.Index(rest, "\n## "); j >= 0 {
+		rest = rest[:j]
+	}
+	if !strings.Contains(rest, "| 路径 | 职责 |") {
+		t.Fatal("the 代码地图 section no longer has a path/responsibility table")
+	}
+
+	for _, dir := range []string{".", "../model"} {
+		entries, err := filepath.Glob(filepath.Join(dir, "*.go"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var missing []string
+		for _, path := range entries {
+			name := filepath.Base(path)
+			if strings.HasSuffix(name, "_test.go") {
+				continue // covered by the paragraph below the table, by design
+			}
+			if !strings.Contains(rest, name) {
+				missing = append(missing, filepath.Join(filepath.Base(dir), name))
+			}
+		}
+		sort.Strings(missing)
+		if len(missing) > 0 {
+			t.Fatalf("the code map does not name %d source file(s): %s\nA reader following the "+
+				"map will not find them; add a row for each, or fold it into the row of the file "+
+				"it belongs with.", len(missing), strings.Join(missing, ", "))
+		}
+	}
+
+	// The test-file policy has to stay stated, or the paragraph promising it can vanish and the
+	// next reader will wonder why the test files are absent from the table.
+	if !strings.Contains(rest, "*_test.go") {
+		t.Error("the code map no longer explains why test files are not in the table")
 	}
 }

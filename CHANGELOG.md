@@ -659,6 +659,13 @@
 
 ### Fixed
 
+- **CONTRIBUTING 的「代码地图」漏了 `internal/app` 里最大的那个文件。** 表格把整个 `internal/app/` 收成一行、只点名 `app.go` / `stages.go` / `widgets.go` / `compact.go`，于是 `workings.go`（2286 行，每段算式背后的全部 `compute*` / `measure*`）在图上不存在
+  - 读者按图索骥问「这个数在哪儿算的」，最自然的猜测是 `stages.go`——而它只负责把数画出来。`theme.go`（调色板与字号阶梯）和 `window.go`（窗口下限与单栏断点，`main.go` 的钳制也读它）同样缺席
+  - `internal/model/` 也是一整行，没提三个矩阵乘内核——而跑哪一个取决于 `GOEXPERIMENT=simd`
+  - 改成逐文件列出，并新增 `TestContributingCodeMapNamesEverySourceFile`：**从目录枚举**生产源文件（跳过 `*_test.go`），要求每个都在表里出现；同时要求「测试文件为何不在表里」那段说明还在
+  - **守卫要求字面文件名，不接受通配**：初版我写成 `matmul_kernel_*.go` 一行盖住三个内核，测试立刻报出那三个没被点名。这个严格是对的——通配符没法被机械验证，而它正是「看起来覆盖了、实际随时可能漏掉一个」的形态
+  - 破坏性验证做了九次：`workings.go`、`theme.go`、`window.go`、`gpt.go`、`tensor.go`、`tokenizer.go`、`weights.go`、`matmul_kernel_simd_amd64.go` 各删一行都各自报红；删掉测试文件那段说明也单独报红
+  - **与第 10 轮同一类问题、不同文件**：README 的目录清单和 CONTRIBUTING 的代码地图都是「哪里有什么」的地图，都从写下那天起没再核对过。两份现在都有从文件系统派生的守卫
 - **README 的「目录」清单从初始提交起就没更新过，`docs/` 一行还写着「截图」。** 那行是 `89c44c3` 写下的事实——当时 `docs/` 里确实只有图——但 `61b79c8` 把卡片测量记录、交互设计理由和上游回归报告拆进了 `docs/`，于是三项里最该被读者找到的内容，在「去哪找量到的数字」这个问题上得到的回答是「截图」
   - 同时漏了 `CONTRIBUTING.md`、`CHANGELOG.md`、`SECURITY.md`、`mygo.json`、`go.mod`、`go.sum`、`README.md` 本身——一个读者照着这份清单找不到任何一份文档
   - 新增 `TestReadmeDirectoryListingNamesEveryTopLevelEntry`：**从文件系统枚举**根目录条目（跳过 dotfile、`build/`、`dist/` 与 `*.test`），要求清单点名每一个；反向也查——清单里写的路径必须真的存在

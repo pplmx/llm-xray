@@ -29,10 +29,24 @@ just run-simd     # 用实验性 SIMD 本机运行
 
 | 路径 | 职责 |
 | --- | --- |
-| `internal/model/` | 纯 Go 前向：张量运算、tokenizer、`Forward` 与 `Trace`、权重加载 |
-| `internal/app/` | MyGo 界面：`app.go` 布局与交互、`stages.go` 七个阶段视图、`widgets.go` 自绘组件、`compact.go` 单栏（手机 / 竖屏平板）布局 |
+| `internal/model/gpt.go` | `Forward` 与 `Trace`：一次前向，把每一层的中间张量录下来 |
+| `internal/model/tensor.go` | 张量原语：`matMulRows`、`layerNorm`、`gelu`、因果 softmax |
+| `internal/model/tokenizer.go` | 字节级分词、渲染用的转义、`Truncate` 与 `DecodeBytes` |
+| `internal/model/weights.go` | 权重加载与校验、`Unembed` / `LogitLens` / `Softmax` / `TopK` / `Entropy` |
+| `internal/model/matmul_kernel_scalar.go` | 矩阵乘的标量基准，任意平台都能跑 |
+| `internal/model/matmul_kernel_simd_amd64.go` | AVX 内核，`GOEXPERIMENT=simd` 时启用 |
+| `internal/model/matmul_kernel_simd_generic.go` | NEON 版本，以及在无 SIMD 时回落到标量的分支 |
+| `internal/app/app.go` | 布局与交互：顶栏、侧栏、检查器、键位、撤销、采样 |
+| `internal/app/stages.go` | 七个阶段的视图与课文 |
+| `internal/app/workings.go` | 每段算式背后的纯计算（`compute*` / `measure*`），不碰 `ui.Context` |
+| `internal/app/widgets.go` | 自绘组件：热力图、向量条带、直方图、条形列表 |
+| `internal/app/compact.go` | 单栏布局（手机 / 竖屏平板） |
+| `internal/app/theme.go` | 调色板、字号阶梯、卡片与说明块的原语 |
+| `internal/app/window.go` | 窗口最小尺寸与单栏断点，`main.go` 的钳制也读它 |
 | `tools/train.py` | PyTorch 训练并导出 `weights.json`（含参考 logits） |
 | `tools/parity.py` | 导出逐层中间张量，供 Go 侧对拍 |
+
+`internal/app/` 下还有一批 `*_test.go`，每个文件盯一个面：`compact_test.go` 手机布局、`workings_test.go` 算式闭合、`readme_test.go` 与 `readme_cards_test.go` 文档里的数字、`robustness_test.go` 非默认配置与极端输入、`interaction_test.go` 指针与键盘、`justfile_test.go` 配方与 workflow。它们不在上表逐条列出——表格给的是**读代码时的入口**，测试文件按被测对象命名。
 
 ## 改动的验证标准
 

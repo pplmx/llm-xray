@@ -144,3 +144,83 @@ func TestValueColorIsSymmetricAndDegenerateSafely(t *testing.T) {
 			got)
 	}
 }
+
+// TestCountAgreeExcludesTheFinalRung pins the one thing countAgree has to get right.
+//
+// The card says "只看这个位置：N / M 个中间层说对了". The final rung is not an intermediate one —
+// it is the answer being agreed with — so counting it would inflate N by one every time. That is
+// exactly what happened when the `!r.IsFinal` guard was dropped: measured on the bundled weights
+// and the default prompt, the count went from 3 to 4 while the card would still say "中间层".
+//
+// Nothing noticed. The logit-lens tests check the ladder's figures and the README guards its
+// numbers, but none of them touches this count, so the whole suite stayed green through a full
+// 361s run with the guard removed.
+func TestCountAgreeExcludesTheFinalRung(t *testing.T) {
+	a := newTestApp(t)
+	lens := computeLogitLens(a.W, a.Trace, a.SelToken, a.Temp)
+
+	// Build the count three ways and require the guarded one to be the strictest.
+	all, agreeing := 0, 0
+	for _, r := range lens.Rungs {
+		all++
+		if r.AgreesWithFinal && !r.IsFinal {
+			agreeing++
+		}
+	}
+	if agreeing == 0 {
+		t.Fatalf("no intermediate rung agrees with the final answer, so this test cannot tell "+
+			"the guarded count from an unguarded one (%d rungs total)", all)
+	}
+
+	if got := countAgree(lens); got != agreeing {
+		t.Fatalf("countAgree = %d, but %d intermediate rungs agree with the final answer; the "+
+			"card would print a different number", got, agreeing)
+	}
+
+	// And the final rung is one of the rungs the lens builds, so the exclusion is doing work
+	// rather than guarding against a case that cannot occur.
+	var final int
+	for _, r := range lens.Rungs {
+		if r.IsFinal {
+			final++
+		}
+	}
+	if final != 1 {
+		t.Fatalf("the lens built %d final rungs; countAgree's exclusion assumes exactly one", final)
+	}
+}
+
+// TestAgreeNoteNamesAllThreeCases pins the bar tooltip's three answers.
+//
+// agreeNote returns one of three strings: the final rung, a rung that agrees with it, and one
+// that does not. Deleting the first branch — so a final rung gets the plain "与最终答案一致" —
+// left the whole suite green across a 361s run. The tooltip is the only place the reader learns
+// that a bar is the model's actual output rather than an intermediate guess, so losing that
+// distinction changes what the chart says.
+func TestAgreeNoteNamesAllThreeCases(t *testing.T) {
+	cases := []struct {
+		name string
+		rung lensRung
+		want string
+	}{
+		{"final rung", lensRung{IsFinal: true, AgreesWithFinal: true}, " · 这是模型真正的输出"},
+		{"intermediate agreeing", lensRung{AgreesWithFinal: true}, " · 与最终答案一致"},
+		{"intermediate disagreeing", lensRung{}, " · 与最终答案不同"},
+	}
+	for _, c := range cases {
+		if got := agreeNote(c.rung); got != c.want {
+			t.Errorf("%s: agreeNote(%+v) = %q, want %q", c.name, c.rung, got, c.want)
+		}
+	}
+
+	// The three answers have to be three different strings, or the chart cannot distinguish
+	// the cases they describe.
+	seen := map[string]string{}
+	for _, c := range cases {
+		got := agreeNote(c.rung)
+		if other, dup := seen[got]; dup {
+			t.Fatalf("%s and %s both read %q", other, c.name, got)
+		}
+		seen[got] = c.name
+	}
+}

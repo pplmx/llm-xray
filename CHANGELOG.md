@@ -6,6 +6,11 @@
 
 ### Added
 
+- **logit lens 卡片上那两个数，取错时整套测试仍然全绿。** `countAgree` 排除最后一个 rung（`!r.IsFinal`），因为卡片说的是「%d / %d 个**中间层**说对了」；`agreeNote` 对最后一个 rung 返回「这是模型真正的输出」而不是「与最终答案一致」
+  - 实测差异是可见的：默认提示词下排除后是 **3**，不排除是 **4**；把 `agreeNote` 的第一个分支删掉，最后一根柱子就会被描述成普通的一致
+  - **两个改动各自跑完 361 秒全量测试，一条都没红**——logit lens 那一节有 12 个测试，但它们查的是阶梯图的数字与 README 里的引用，没有一条碰这两个显示字段
+  - 新增 `TestCountAgreeExcludesTheFinalRung`（要求 lens 恰好产出一个 final rung、且中间层确实存在一致的，否则测试无法区分）与 `TestAgreeNoteNamesAllThreeCases`（三种情形各一条，外加「三种答案必须是三个不同字符串」）
+  - 破坏性验证四处：去掉 `!r.IsFinal` → `countAgree = 4, but 3 intermediate rungs`；删掉 `agreeNote` 的 `IsFinal` 分支 → 报出实际返回的字符串；把两个分支写成同一句 → `both read " · 与最终答案一致"`
 - **`maxAbsFloat` 改成恒返回 0，整套测试一条都没红。** 它是 `vectorStrip` 每格颜色的**色深上限**，退化后 `valueColor(v, 0)` 会让整条色带变成同一片淡灰——屏幕上明显可见，而 `Texts()` 里什么也看不到，正是 CONTRIBUTING「测不到的东西」第 2 条说的那类
   - 这个函数是**纯函数**，不必靠截图。新增 `TestMaxAbsFloatAnchorsTheVectorStrip`：空、全零、正负混合、负值主导等六种输入，外加「任何分量的绝对值都不超过返回值」这条 `vectorStrip` 真正依赖的性质
   - 破坏性验证：还原成 `return 0` → `positive: maxAbsFloat([1 2 3]) = 0, want 3`；去掉取绝对值那两行 → `negative dominates: maxAbsFloat([-5 1 2]) = 2`

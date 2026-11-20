@@ -7456,7 +7456,10 @@ func TestOnlyWarningsUseTheWarmLabelColour(t *testing.T) {
 // TestOnlyWarningsUseTheWarmLabelColour covers those. This test holds the line for the three
 // that have no text use at all.
 func TestDataColoursAreNotUsedOnText(t *testing.T) {
-	files := []string{"app.go", "stages.go", "widgets.go", "theme.go"}
+	// Discovered, not listed: this named four files while the package has seven, so compact.go
+	// was never checked. Measured — putting colGreen on a text label in compact.go left the test
+	// green. See sourceFiles.
+	files := sourceFiles(t)
 	for _, dataColour := range []string{"colPos", "colNeg", "colGreen"} {
 		for _, name := range files {
 			src, err := os.ReadFile(name)
@@ -7967,7 +7970,7 @@ func TestHashMeansATokenIndexEverywhere(t *testing.T) {
 // 0x54" where the strip says 84.
 func TestTooltipNumberingMatchesTheVisibleUI(t *testing.T) {
 	files := map[string]string{}
-	for _, name := range []string{"app.go", "stages.go", "widgets.go"} {
+	for _, name := range sourceFiles(t) {
 		src, err := os.ReadFile(name)
 		if err != nil {
 			t.Fatal(err)

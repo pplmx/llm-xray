@@ -693,6 +693,12 @@
 
 ### Fixed
 
+- **三个「扫源码找约定」的守卫各自写死了一份文件清单，而包里实际有七个文件。** `TestSpacingValuesComeFromASmallSet` 列了 3 个、`TestDataColoursAreNotUsedOnText` 列了 4 个、`TestTooltipNumberingMatchesTheVisibleUI` 列了 3 个；`compact.go` **在三份清单里全都缺席**
+  - 实测两个注入都被漏过：在 `compact.go` 里写 `.Gap(13)`（13 不在允许的间距集合里）→ 测试通过；把一个文本标签改成 `colGreen`（数据色不许用在文字上）→ 测试也通过。**今天没有违规纯属巧合**，那两个文件里现有的间距值正好都在集合内
+  - 修法：新增 `sourceFiles(t)`，用 `filepath.Glob` 枚举包内非测试文件，三处改为调用它。这样**新增文件当下就被覆盖**，不必等谁想起来把它加进清单
+  - 破坏性验证：同一对注入在修正后各报各的——`compact.go uses spacing 13, which is not in the set` 与 `colGreen on text 1 time(s); that colour means a value in a chart, not a label`
+  - **这是连续第四轮同一族问题**（第 10/11 轮的地图清单、第 26–28 轮的判据散落、本轮的源码清单）：手写清单总会落后于目录，而判据应当来自**枚举**而不是**记忆**
+  - 一次自己的 grep 写错也记下：第一次验证间距注入时输出为空，我差点判断「没抓到」，实际是 grep 模式与实际消息不符；`-v` 一看就清楚了。**验证脚本比被测代码更容易出错**，这是第 15、26 轮之后第三次
 - **第 27 轮说「四个扫描点全部统一」时还是少数了一个——实际有六处，剩下两处仍各查各的。** 用穷举脚本把测试里所有 `"NaN"` / `"+Inf"` / `"-Inf"` 字面量找出来（排除帮忙函数自己的定义），余下两处都还写着窄判据
   - `TestRandomWeightsRenderWithoutPoisoning` 查 `NaN / %!`，`TestUnderflowIsCountedNotPrinted` 只查 `+Inf`
   - 两处的注释都写得很像「有意更窄」，但它们窄的理由**并不成立**：实测这两条路径下共享判据都不会误报。随机权重下唯一的 `-Inf` 是课文里那句因果掩码解释，而共享函数已经豁免了它

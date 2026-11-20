@@ -2,7 +2,9 @@ package app
 
 import (
 	"os"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -27,7 +29,13 @@ func TestSpacingValuesComeFromASmallSet(t *testing.T) {
 
 	spacing := regexp.MustCompile(`\.(?:Gap|Padding|Margin)\(([0-9, ]+)\)`)
 	total := 0
-	for _, name := range []string{"app.go", "stages.go", "widgets.go"} {
+	// Every non-test file in the package, discovered rather than listed.
+	//
+	// This used to name three files by hand, and the package has seven: compact.go and theme.go
+	// both lay out spacing, and neither was scanned. Measured — introducing `.Gap(13)` (13 is
+	// not in the allowed set) into compact.go left this test green, because it never opened the
+	// file. A spacing scale that only covers the files someone remembered is not a scale.
+	for _, name := range sourceFiles(t) {
 		src, err := os.ReadFile(name)
 		if err != nil {
 			t.Fatal(err)
@@ -55,4 +63,34 @@ func TestSpacingValuesComeFromASmallSet(t *testing.T) {
 			total)
 	}
 	t.Logf("checked %d spacing values against %d allowed steps", total, len(allowed))
+}
+
+// sourceFiles returns every non-test .go file in the package, sorted.
+//
+// Two guards in this package walk the sources looking for a convention — the spacing scale and
+// the data-colour rule — and both used to name their files by hand. The package has seven, the
+// lists said three and four, and the missing file in both cases was compact.go: the phone layout,
+// which was added later and never added to either list. Measured — a `.Gap(13)` (not in the
+// allowed set) and a `colGreen` on a text label, both in compact.go, each left its guard green.
+//
+// Enumerating means a new file is covered the moment it exists, which is what these conventions
+// need: they are about the package, not about the files someone remembered.
+func sourceFiles(t *testing.T) []string {
+	t.Helper()
+	paths, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, p := range paths {
+		if strings.HasSuffix(p, "_test.go") {
+			continue
+		}
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	if len(out) < 5 {
+		t.Fatalf("found only %d source files; the glob stopped matching", len(out))
+	}
+	return out
 }

@@ -10103,8 +10103,8 @@ func TestScoreColorScaleRangeMatchesTheWeights(t *testing.T) {
 	for _, p := range promptPresets {
 		prompts = append(prompts, p.prompt)
 	}
-	lo := map[int]float64{}
-	hi := map[int]float64{}
+	lo2 := map[int]float64{}
+	hi2 := map[int]float64{}
 	for _, p := range prompts {
 		a := newTestApp(t)
 		a.Prompt = p
@@ -10115,17 +10115,17 @@ func TestScoreColorScaleRangeMatchesTheWeights(t *testing.T) {
 				if sc <= 0 {
 					continue
 				}
-				if v, ok := lo[li]; !ok || sc < v {
-					lo[li] = sc
+				if v, ok := lo2[li]; !ok || sc < v {
+					lo2[li] = sc
 				}
-				if v, ok := hi[li]; !ok || sc > v {
-					hi[li] = sc
+				if v, ok := hi2[li]; !ok || sc > v {
+					hi2[li] = sc
 				}
 			}
 		}
 	}
-	if len(lo) < 2 {
-		t.Fatalf("measured %d layers, want both", len(lo))
+	if len(lo2) < 2 {
+		t.Fatalf("measured %d layers, want both", len(lo2))
 	}
 
 	// Read the figures out of the comment rather than keeping a second copy. Holding them here
@@ -10158,13 +10158,39 @@ func TestScoreColorScaleRangeMatchesTheWeights(t *testing.T) {
 		{1, parse(m[3]), parse(m[4])},
 	}
 	for _, w := range want {
-		gotLo, gotHi := lo[w.layer], hi[w.layer]
+		gotLo, gotHi := lo2[w.layer], hi2[w.layer]
 		// A tenth of slack: the exact extremes depend on which prompts are in the set, and
 		// pinning them to the last digit would make this a test of the prompt list.
 		if math.Abs(gotLo-w.lo) > 0.1 || math.Abs(gotHi-w.hi) > 0.1 {
 			t.Fatalf("layer %d colour scale runs %.2f to %.2f; the comment on the score stage "+
 				"says %.1f to %.1f — re-measure and update both, they are one fact stated twice",
 				w.layer, gotLo, gotHi, w.lo, w.hi)
+		}
+	}
+
+	// The README states the same four figures. It was outside this test, so the document and
+	// the comment could disagree while the comment was held to the weights — the same
+	// one-copy-guarded shape as the fade duration and the overflow figure. Both are now read
+	// and both compared against the same measurement.
+	readme := readREADME(t)
+	reREADME := regexp.MustCompile(`第 0 层 ([0-9]+\.[0-9]+)–([0-9]+\.[0-9]+)、第 1 层 ` +
+		`([0-9]+\.[0-9]+)–([0-9]+\.[0-9]+)`)
+	mr := reREADME.FindStringSubmatch(readme)
+	if mr == nil {
+		t.Fatal("the README no longer quotes the colour-scale ranges in the form this test " +
+			"knows; update the test with the sentence you wrote")
+	}
+	// Exact comparison against the comment, not against the measurement: the README and the
+	// comment are two copies of one fact, so they must be identical. The slack above is for
+	// the measurement, which moves with the prompt set; it must not leak into this check, or a
+	// README that says 12.6 where the comment says 12.5 passes. Measured: with the slack applied
+	// here, two of the four figures could be edited without failing.
+	for i, w := range want {
+		statedLo, statedHi := parse(mr[1+2*i]), parse(mr[2+2*i])
+		if statedLo != w.lo || statedHi != w.hi {
+			t.Fatalf("the README says layer %d runs %s to %s; the score stage's comment says "+
+				"%.1f to %.1f — they are one fact stated twice and have to match exactly",
+				w.layer, mr[1+2*i], mr[2+2*i], w.lo, w.hi)
 		}
 	}
 }

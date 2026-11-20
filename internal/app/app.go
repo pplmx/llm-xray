@@ -463,6 +463,14 @@ func (a *App) selectToken(i int, reveal bool) {
 
 // stepToken moves the selection by delta, clamped to the sequence, for the
 // Shift+Left/Right shortcuts.
+// stepToken moves the token selection by delta, clamped to the sequence.
+//
+// The n == 0 return keeps SelToken from being set on a trace with no tokens. Removing it leaves
+// the app working — measured: with an empty prompt, Shift+Right then sets SelToken from -1 to 0,
+// pointing at a token that does not exist, and every reader of SelToken bounds-checks before
+// using it, so nothing renders wrongly and recompute repairs the value on the next keystroke.
+// The guard is here so that invariant holds by construction rather than by every call site
+// remembering to check; a future reader that trusts SelToken would fail on the state it prevents.
 func (a *App) stepToken(delta int) {
 	n := len(a.Trace.Tokens)
 	if n == 0 {

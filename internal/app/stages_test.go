@@ -563,3 +563,91 @@ func TestLabelStrideAnswersForADegenerateCellWidth(t *testing.T) {
 		}
 	}
 }
+
+// TestStepTokenLeavesTheSelectionUnsetOnAnEmptyTrace pins the invariant stepToken's guard keeps.
+//
+// With an empty prompt SelToken is -1, meaning "nothing selected". Removing the `n == 0` return
+// lets Shift+Right set it to 0 — an index into an empty slice. Nothing breaks today: every reader
+// of SelToken bounds-checks first, and the next keystroke recomputes the value. Measured, the
+// whole suite stayed green across a 354s run with the guard gone.
+//
+// The invariant is still worth holding, and the test states it directly rather than through a
+// render: "selected nothing" must stay "selected nothing", so a future reader may trust the field
+// instead of defending against a state this function created.
+func TestStepTokenLeavesTheSelectionUnsetOnAnEmptyTrace(t *testing.T) {
+	a := newTestApp(t)
+	a.applyPrompt("")
+	if len(a.Trace.Tokens) != 0 {
+		t.Fatalf("the empty prompt produced %d tokens; this test needs an empty trace",
+			len(a.Trace.Tokens))
+	}
+	if a.SelToken != -1 {
+		t.Fatalf("an empty prompt leaves SelToken at %d, not -1", a.SelToken)
+	}
+
+	// Either direction has to leave it alone.
+	a.stepToken(1)
+	if a.SelToken != -1 {
+		t.Fatalf("stepToken(1) on an empty trace set SelToken to %d; there is no token to select",
+			a.SelToken)
+	}
+	a.stepToken(-1)
+	if a.SelToken != -1 {
+		t.Fatalf("stepToken(-1) on an empty trace set SelToken to %d", a.SelToken)
+	}
+
+	// And with tokens it still moves, so the guard is not disabling the function.
+	a.applyPrompt("abc")
+	a.SelToken = 0
+	a.stepToken(1)
+	if a.SelToken != 1 {
+		t.Fatalf("stepToken(1) on a three-token trace moved the selection to %d, want 1", a.SelToken)
+	}
+}
+
+// TestScrollStageByStaysInRange pins both clamps.
+//
+// scrollStageBy is what PageUp/PageDown call. It adds delta to Scroll.Y and then clamps to
+// [0, MaxY]. Removing both clamps left the whole suite green across a 354s run, because every
+// other scroll test checks where the view ended up rather than whether the field ever left its
+// range. Ten presses of PageUp from the top would leave Y at -4500; the drawn frame clamps
+// nothing, so the stage column would scroll past its own beginning.
+func TestScrollStageByStaysInRange(t *testing.T) {
+	a := newTestApp(t)
+	a.Step = 4 // a tall stage, so MaxY is well above a single page
+	tr := ui.NewTester(a.View, 1180, 720)
+	tr.Frame()
+	maxY := a.Scroll.MaxY
+	if maxY <= 0 {
+		t.Fatalf("the stage reports MaxY = %.0f; there is nothing to scroll", maxY)
+	}
+
+	// Far past the top.
+	for i := 0; i < 20; i++ {
+		a.scrollStageBy(-maxY)
+		if a.Scroll.Y < 0 {
+			t.Fatalf("scrolling up %d page(s) left Y at %.0f", i+1, a.Scroll.Y)
+		}
+	}
+	if a.Scroll.Y != 0 {
+		t.Fatalf("after scrolling far past the top Y is %.0f, want 0", a.Scroll.Y)
+	}
+
+	// Far past the bottom.
+	for i := 0; i < 20; i++ {
+		a.scrollStageBy(maxY)
+		if a.Scroll.Y > maxY {
+			t.Fatalf("scrolling down %d page(s) left Y at %.0f, past MaxY %.0f", i+1, a.Scroll.Y, maxY)
+		}
+	}
+	if a.Scroll.Y != maxY {
+		t.Fatalf("after scrolling far past the bottom Y is %.0f, want MaxY %.0f", a.Scroll.Y, maxY)
+	}
+
+	// A partial page in the middle still moves, so the clamps are not pinning the value.
+	a.Scroll.Y = 0
+	a.scrollStageBy(maxY / 2)
+	if a.Scroll.Y <= 0 || a.Scroll.Y >= maxY {
+		t.Fatalf("a half-page scroll from 0 landed at %.0f, inside neither end", a.Scroll.Y)
+	}
+}

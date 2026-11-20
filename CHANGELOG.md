@@ -6,6 +6,12 @@
 
 ### Added
 
+- **`scrollStageBy` 的两个夹紧都没测。** 同时删掉 `y < 0` 与 `y > MaxY` 两处，354 秒全量测试全绿——其他滚动测试检查的是「视图最终停在哪」，不是「字段有没有越出范围」。十次 PageUp 从顶部按下去，`Y` 会变成 `-4500`
+  - 新增 `TestScrollStageByStaysInRange`：向上二十页必须停在 0、向下二十页必须停在 `MaxY`，再加一次半页滚动确认夹紧没有把值钉死
+  - 破坏性验证：删掉上界 → `left Y at -1805`；删掉下界 → `left Y at 3609, past MaxY 1805`，各自独立
+- **`stepToken` 的空 trace 守卫也是防御性的，但它维持的是「没有选中项」这个不变式。** 去掉 `n == 0` 的提前返回，空提示词下 Shift+Right 会把 `SelToken` 从 `-1` 改成 `0`——指向一个不存在的 token。354 秒全量测试全绿，因为每个读 `SelToken` 的地方都先做了越界判断，下一次按键时 `recompute` 又会修好它
+  - 保留守卫，注释写明它让不变式**由构造保证**而不是靠每个调用点记得检查；新增 `TestStepTokenLeavesTheSelectionUnsetOnAnEmptyTrace`（先断言 trace 确实为空、`SelToken` 确实是 -1，否则测试什么也没证明），并在有 token 时验证它仍然会移动，防止守卫把功能关掉
+  - 破坏性验证：删掉守卫 → `stepToken(1) on an empty trace set SelToken to 0`
 - **`headsWord` 的十个中文数字臂只测了四个，剩下的六个写错没人管。** 把「六」和「九」两条 `case` 互换，363 秒全量测试全绿——测试的 map 里只有 `1/2/4/8` 和两个 digit 形式
   - `n_head` 只要能被 `d_model` 整除就合法，所以 3、5、6、7、9、10 个头都能从**可加载的 checkpoint** 出现，卡片的标题与结论会说出错误的数量
   - 补齐 `0–16` 全部取值；六个分支各改一次，每次都只报自己那条：`headsWord(6) = "错个", want "六个"`

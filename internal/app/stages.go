@@ -1911,6 +1911,20 @@ func controlScopeNote(off []string) string {
 	return strings.Join(parts, " · ")
 }
 
+// clampIndex keeps an index inside [0, n-1], and answers 0 when n is 0.
+//
+// The n == 0 answer is the odd one: 0 is not a valid index into an empty slice. It is here
+// because a caller comparing the result with 0 would otherwise have to special-case the empty
+// case itself, and because returning -1 would change every existing caller's meaning. Two of the
+// four call sites are guarded by their own `len(tokens) == 0` return before reaching this, one is
+// inside stage(), which returns the empty-prompt card first, and one in stepToken returns early
+// too — so in the running app n is never 0.
+//
+// That makes the branch unreachable today, and worth stating for the reason a reader would trip
+// over: `if i := clampIndex(a.SelToken, len(tr.Tokens)); i >= 0` reads as "skip when there are no
+// tokens", and it does not — with n == 0 the result is 0, so the condition holds and the body
+// would index an empty slice. It is safe only because stage() never calls it in that state. Do
+// not copy that idiom to a place where tokens can be empty.
 func clampIndex(i, n int) int {
 	if n == 0 {
 		return 0

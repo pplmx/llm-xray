@@ -6,6 +6,14 @@
 
 ### Added
 
+- **`newTestApp` 把同一个 `*model.Weights` 指针发给每个测试，而它成立的唯一依据是一句「测试只读权重」的注释。** 该注释本身写得对：`model.Bundled` 每次调用要重读并解析 2.4 MB JSON，而 `newTestApp` 被这个包五百多个测试各自调用，在 `-race` 下这曾把整个包推过 Go 默认的十分钟超时
+  - 但**没有任何机制保证「只读」**。实测确认这不是假想：`newTestApp` 两次返回同一个指针（`A.W=0x...000 B.W=0x...000 same=true`），而在一次调用里写 `Layers[0].LN1G[0]` 之后，**后续任何测试都看得到那个改动**
+  - 更早的一次实测更直接：把 `W.Config.DModel` 改成 48，下一个 `newTestApp` 立刻在 `New()` 里 panic——共享是真的，且破坏方式是崩溃
+  - 新增 `TestMain` 在整包运行前后各取一次**权重指纹**（FNV-1a 走所有 float32 的位模式，顺序敏感，避免「改了又改回来」漏过），不一致就以非零码退出，并在 stderr 写明原因和两条修法
+  - **为什么用 `TestMain` 而不是让 `newTestApp` 每次深拷贝**：每个测试拷 2.3 MB，五百多个测试就是每次跑都多几百 MB 的复制与 GC 压力，而这正是那条注释当初要避免的成本。检查一次的成本可以忽略
+  - 破坏性验证：加一个故意写 `LN1G[0] += 1` 的测试 → 报 `the bundled weights changed during the test run (5129771793118401094 -> 15835340873913842830)` 并失败；删掉该写入 → 通过。整包跑一遍无假阳性（362.3s）
+  - **两处刻意的行为**：包内已有测试失败时（`code != 0`）不再叠加指纹报错，避免在一次真失败上盖一条噪音；`-run` 过滤到一个测试都不匹配时正常退出
+  - **一个命名陷阱写进了注释**：同文件旁的 `TestMainValidatesStep` / `TestMainDoesNotPrefixLoadErrors` 是关于 `main.go` 的普通测试，外形上像这个 `TestMain` 的兄弟但毫无关系。删掉 `func TestMain` 会**静默**去掉这项检查，`go vet` 不会提示
 - **把配置维度的可达性从三个补到五个，并给那条测试改了名字。** 上一轮新增的 `TestVocabularyIsPinnedToByteVocab` 只往返验了 `ctx`、`n_head`、`d_ff` 三个字段，漏掉了 `n_layer` 与 `d_model`——而这两个同样被 app 的守卫扫描过或依赖过（`narrowWeights` 用的就是减半的 d_model）
   - 实测补上：`n_layer=1` 与减半 d_model 的完整副本都返回 `nil`。现在五个维度全是可达状态，vocab 是唯一的例外
   - **测试名随之改准**：`TestVocabularyIsPinnedToByteVocab` → `TestWhichConfigFieldsWeightsCanVary`。原名只说了它覆盖的一半，而这个仓库已经吃过「名字描述的范围小于实际覆盖」的亏（`TestPrintedArithmeticClosesAcrossTheControls` 名字说跨控件、实际只算模型浮点）

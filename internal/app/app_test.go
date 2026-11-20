@@ -2,7 +2,9 @@ package app
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
+	"hash/fnv"
 	"image"
 	"math"
 	"os"
@@ -41,6 +43,79 @@ func newTestApp(t testing.TB) *App {
 		t.Fatalf("bundled weights: %v", bundledWeights.err)
 	}
 	return New(bundledWeights.w)
+}
+
+// weightsFingerprint is a cheap order-sensitive digest of every float in the shared weights.
+//
+// Used only to notice a test that wrote into them. FNV over the bit patterns: the point is to
+// catch any change at all, not to be a strong hash, and a summation would miss a swap.
+func weightsFingerprint(w *model.Weights) uint64 {
+	h := fnv.New64a()
+	var buf [4]byte
+	mix := func(vs []float32) {
+		for _, v := range vs {
+			binary.LittleEndian.PutUint32(buf[:], math.Float32bits(v))
+			h.Write(buf[:])
+		}
+	}
+	mix(w.TokEmbed)
+	mix(w.PosEmbed)
+	mix(w.LNFG)
+	mix(w.LNFB)
+	for _, l := range w.Layers {
+		mix(l.LN1G)
+		mix(l.LN1B)
+		mix(l.WQ)
+		mix(l.WK)
+		mix(l.WV)
+		mix(l.WO)
+		mix(l.LN2G)
+		mix(l.LN2B)
+		mix(l.W1)
+		mix(l.W2)
+	}
+	return h.Sum64()
+}
+
+// TestMain guards the premise that makes the shared weights safe.
+//
+// newTestApp hands every test the same *model.Weights, which is what keeps the package under
+// CI's timeout: parsing 2.4 MB of JSON per test pushed it past ten minutes under -race. The
+// comment there justifies it with "the tests only read the weights" — a claim nothing enforced.
+// Measured while adding this: a test that writes Layers[0].LN1G[0] is visible to every test that
+// runs afterwards, so one careless case would change what its neighbours assert, in an order
+// that depends on which -run flags the reader passed.
+//
+// The fingerprint is taken before m.Run and compared after, so the failure names the package and
+// not the test — that is the price of checking cheaply. Each test gets a fresh App but not fresh
+// weights, so a write anywhere is enough.
+//
+// The name is Go's own entry point rather than a choice; note that window_min_test.go has
+// TestMainValidatesStep and TestMainDoesNotPrefixLoadErrors, which are ordinary tests about
+// main.go and only look like siblings of this one. They are not: removing this function silently
+// removes the check, and `go vet` will not say so.
+func TestMain(m *testing.M) {
+	bundledWeights.once.Do(func() {
+		bundledWeights.w, bundledWeights.err = model.Bundled()
+	})
+	var before uint64
+	if bundledWeights.err == nil {
+		before = weightsFingerprint(bundledWeights.w)
+	}
+
+	code := m.Run()
+
+	if bundledWeights.err == nil && code == 0 {
+		if after := weightsFingerprint(bundledWeights.w); after != before {
+			fmt.Fprintf(os.Stderr, "the bundled weights changed during the test run (%d -> %d). "+
+				"newTestApp shares one *model.Weights with every test, so a test that writes to "+
+				"it changes what every later test sees. Copy the field you need instead, or "+
+				"build a modified checkpoint with model.Random or a resliced copy.\n",
+				before, after)
+			code = 1
+		}
+	}
+	os.Exit(code)
 }
 
 // TestRenderSteps draws every stage to /tmp so the layout can be inspected

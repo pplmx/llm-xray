@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -200,8 +201,25 @@ func TestReadmeModelBlockMatchesTheWeights(t *testing.T) {
 		t.Fatalf("the README quotes an architecture the weights do not have: %+v", c)
 	}
 
-	if strings.Contains(doc, "参数量 25.3 万") && a.paramCount()/10000 != 25 {
-		t.Fatalf("the README says 25.3 万 parameters, the model has %d", a.paramCount())
+	// The parameter count. Two holes made this check useless, both measured:
+	//
+	//  1. It was guarded by strings.Contains(doc, "参数量 25.3 万"), so editing the number made
+	//     the condition false and the whole check skipped — 25.4, 25.9 and 25.0 all passed.
+	//  2. It compared integer division, a.paramCount()/10000 != 25, which throws away the very
+	//     digits the sentence states.
+	//
+	// It now reads the figure out of the sentence and compares it at the precision the
+	// sentence uses.
+	reParams := regexp.MustCompile(`参数量 ([0-9]+\.[0-9]+) 万`)
+	mParams := reParams.FindStringSubmatch(doc)
+	if mParams == nil {
+		t.Fatal("the README no longer states the parameter count in the form this test knows; " +
+			"update the test with the sentence you wrote")
+	}
+	got := strconv.FormatFloat(float64(a.paramCount())/10000, 'f', 1, 64)
+	if mParams[1] != got {
+		t.Fatalf("the README says %s 万 parameters; the weights give %d, which is %s 万",
+			mParams[1], a.paramCount(), got)
 	}
 }
 
@@ -1243,4 +1261,53 @@ func TestReadmeProgressDotStatesMatchTheCode(t *testing.T) {
 				want)
 		}
 	}
+}
+
+// TestReadmeDimensionReadoutMatchesTheStrip keeps the README's worked example of the vector
+// strip's readout honest.
+//
+// The README says hovering the strip shows "光标处那一维的精确值（`d48 = -0.0627`）". It named
+// the dimension d37, and no dimension 37 holds that value — the hovered position renders
+// "-0.0627" only at dimension 48. A worked example is what a reader checks the feature against,
+// so a wrong index is worse than no index: they hover d37, see +0.3406, and conclude the readout
+// is broken.
+//
+// The test hovers the dimension the README names and requires the rendered string to carry the
+// value the README quotes, which ties the two together instead of checking either alone.
+func TestReadmeDimensionReadoutMatchesTheStrip(t *testing.T) {
+	doc := readREADME(t)
+	re := regexp.MustCompile("`d(\\d+) = (-?[0-9.]+)`")
+	m := re.FindStringSubmatch(doc)
+	if m == nil {
+		t.Fatal("the README no longer gives a worked example of the dimension readout in the " +
+			"form this test knows; update the test with the sentence you wrote")
+	}
+	dim, err := strconv.Atoi(m[1])
+	if err != nil {
+		t.Fatalf("the README's dimension index %q is not a number: %v", m[1], err)
+	}
+
+	a := newTestApp(t)
+	a.Step = 1 // the embedding stage, which draws the input vector strip
+	if dim >= a.W.Config.DModel {
+		t.Fatalf("the README works the example at d%d, past d_model (%d)",
+			dim, a.W.Config.DModel)
+	}
+	a.HoverDimIn = dim
+	tr := ui.NewTester(a.View, 1500, 940)
+	tr.Frame()
+
+	want := fmt.Sprintf("d%d：", dim)
+	for _, s := range tr.Texts() {
+		if !strings.HasPrefix(s, want) {
+			continue
+		}
+		if !strings.Contains(s, m[2]) {
+			t.Fatalf("the README quotes d%d = %s but the strip renders %q there; the worked "+
+				"example names a dimension whose value is different", dim, m[2], s)
+		}
+		return
+	}
+	t.Fatalf("hovering d%d renders no %q readout, so the README's example cannot be checked "+
+		"against the app", dim, want)
 }

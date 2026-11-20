@@ -659,6 +659,13 @@
 
 ### Fixed
 
+- **README 的「目录」清单从初始提交起就没更新过，`docs/` 一行还写着「截图」。** 那行是 `89c44c3` 写下的事实——当时 `docs/` 里确实只有图——但 `61b79c8` 把卡片测量记录、交互设计理由和上游回归报告拆进了 `docs/`，于是三项里最该被读者找到的内容，在「去哪找量到的数字」这个问题上得到的回答是「截图」
+  - 同时漏了 `CONTRIBUTING.md`、`CHANGELOG.md`、`SECURITY.md`、`mygo.json`、`go.mod`、`go.sum`、`README.md` 本身——一个读者照着这份清单找不到任何一份文档
+  - 新增 `TestReadmeDirectoryListingNamesEveryTopLevelEntry`：**从文件系统枚举**根目录条目（跳过 dotfile、`build/`、`dist/` 与 `*.test`），要求清单点名每一个；反向也查——清单里写的路径必须真的存在
+  - **只查「在不在」，不查每条后面那句描述**：描述轻微过期不是这条测试的事，把散文钉死会让每次改词都变红
+  - 破坏性验证：删掉 `SECURITY.md` → 报 `does not name 1 top-level entr(ies) … SECURITY.md`；写一个不存在的 `internal/nonexistent/` → 报 `names "internal/nonexistent", which does not exist`
+  - **一次自己造成的假信号记下来**：第一次跑「写入不存在的 `tools/gone.py`」时，shell 的 heredoc 转义让替换根本没落盘，测试看起来「没抓到」，而实际是变异没生效。重跑之后立刻报 `names "tools/gone.py", which does not exist`。**mutation 没红时，先确认变异真的写进去了**
+  - 顺带清查一枚 17 MB 的本地遗留文件 `app.test`：它已被 `.gitignore` 的 `*.test` 忽略，不在仓库里，所以清单不该列它——守卫按后缀跳过
 - **每次发版都会丢掉 Linux 的 RPM 包，而且发版流程此前没有任何测试。** `release.yml` 的 publish 作业用一份**显式扩展名清单**决定哪些产物挂到 GitHub Release 上：`.dmg`、`.zip`、`.deb`、`.tar.gz`、`.exe`——**没有 `.rpm`**。而 `go tool mygo build -platform linux/amd64` 每次都产出一个 `.rpm`（实测 5.3 MB，删掉重建仍在），build 作业也照常把它作为 artifact 上传，于是它一路走到 publish，然后被静默丢弃
   - 后果只在打 tag 时显现：Fedora / RHEL 用户拿到的是一个缺了包的 release，而不是一次红色的构建
   - **README 的产物表同样漏了 `.rpm`**——而那是读者先看的地方。有人查表得到「没有 RPM」，也就不会再去 release 页面找

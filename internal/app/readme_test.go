@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -947,5 +948,94 @@ func TestDocsOnlyShowJustCommandsThatWork(t *testing.T) {
 		t.Fatalf("only %d documented just invocations checked; the docs used to name at least "+
 			"ten recipes, so either they lost their instructions or the pattern stopped matching",
 			checked)
+	}
+}
+
+// TestReadmeDirectoryListingNamesEveryTopLevelEntry keeps the 目录 block from becoming a partial
+// picture of the repository.
+//
+// It said `docs/  截图` from the initial commit onward, and docs/ gained three long-form
+// documents when the card notes, the interaction rationale and the upstream regression report were
+// split out of the README (61b79c8). A reader scanning the listing to find "where do the measured
+// numbers live" was told the directory holds screenshots. CONTRIBUTING.md, CHANGELOG.md,
+// SECURITY.md and mygo.json were not listed at all.
+//
+// The check derives its list from the filesystem rather than from a second hand-written list: for
+// every tracked-looking top-level entry, either the listing names it or this fails. It is
+// deliberately about *presence*, not about the one-line descriptions beside each name — a
+// description going slightly stale is not what this test is for, and pinning prose would make it
+// fail on every reword.
+func TestReadmeDirectoryListingNamesEveryTopLevelEntry(t *testing.T) {
+	doc := readREADME(t)
+
+	// Extract the fenced block under "## 目录".
+	i := strings.Index(doc, "## 目录")
+	if i < 0 {
+		t.Fatal("the README no longer has a 目录 section; update this test")
+	}
+	rest := doc[i:]
+	start := strings.Index(rest, "```")
+	if start < 0 {
+		t.Fatal("the 目录 section no longer has a fenced code block")
+	}
+	body := rest[start+3:]
+	if end := strings.Index(body, "```"); end >= 0 {
+		body = body[:end]
+	}
+	if strings.TrimSpace(body) == "" {
+		t.Fatal("the 目录 block is empty")
+	}
+
+	root := filepath.Join("..", "..")
+	// Top-level entries a reader can see in a checkout. Dotfiles are skipped: .gitignore and
+	// .editorconfig are conventions rather than places to look for something, and listing every
+	// dotfile would make the block noise.
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read the repository root: %v", err)
+	}
+	var missing []string
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, ".") || name == "build" || name == "dist" {
+			continue // dotfiles, and build outputs that are not in the repository
+		}
+		// Compiled test binaries land in the root when someone runs `go test -c`, and the
+		// .gitignore covers them. They are not part of the repository, so they are not part of
+		// the map — measured, one left over from a debug session showed up here.
+		if strings.HasSuffix(name, ".test") {
+			continue
+		}
+		if !strings.Contains(body, name) {
+			missing = append(missing, name)
+		}
+	}
+	// For a directory, the listing may instead name a path inside it; both count as naming it.
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		t.Fatalf("the README's 目录 block does not name %d top-level entr(ies) a reader sees in a "+
+			"checkout: %s\nUpdate the block — it is the map a new reader uses to find where things "+
+			"live.", len(missing), strings.Join(missing, ", "))
+	}
+
+	// And it must not name something that is not there. A stale path sends the reader to a
+	// directory that no longer exists, which is worse than omitting it.
+	for _, line := range strings.Split(body, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		path := strings.TrimSuffix(fields[0], "/")
+		if !strings.Contains(path, ".") && !strings.Contains(path, "/") {
+			continue // a bare word, not a path
+		}
+		if _, err := os.Stat(filepath.Join(root, path)); err != nil {
+			// Files under internal/ are listed with a trailing description and may be named
+			// without their parent, so only absolute-from-root paths are checked here.
+			if !strings.Contains(path, "/") {
+				continue
+			}
+			t.Errorf("the README's 目录 block names %q, which does not exist", path)
+		}
 	}
 }

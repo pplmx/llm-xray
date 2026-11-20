@@ -255,16 +255,23 @@ AMD EPYC 7742，Go 1.27，单核 / 4 核：前向 16 token 1.4 / 1.2 ms、64 tok
 ## 目录
 
 ```
+README.md                你正在读的这份：用法、界面、模型与正确性
 main.go                  窗口与权重加载
 justfile                 多端构建、测试、运行命令
+mygo.json                应用标识与打包选项（name / slug / 包名、iOS 与 Android 的打包设置）
+go.mod                   模块与唯一一个直接依赖：MyGo
+go.sum                   该依赖的校验和
 internal/model/          纯 Go 模型：tokenizer / tensor / gpt / weights
 internal/model/testdata/ PyTorch 逐层对拍夹具（parity.json.gz）
 internal/app/            MyGo 界面：布局、组件、七个阶段的视图、检查器（theme.go 有调色板与字号阶梯）
 tools/train.py           PyTorch 训练并导出 weights.json
 tools/parity.py          PyTorch 逐层中间结果导出，用于对拍
-docs/                    截图
+docs/                    README 引用的 6 张截图，以及拆出去的三份长文（卡片测量记录、交互设计理由、上游回归报告）
 .github/                 CI、release、dependabot 配置
 .vscode/                 共享的编辑器配置与调试配置
+CONTRIBUTING.md          环境、代码地图、验证门槛、测不到的东西
+CHANGELOG.md             逐轮的改动与测量记录
+SECURITY.md              适用范围、报告方式、产物签名与校验说明
 ```
 
 仓库约定：LF 换行 + `.editorconfig` 缩进（Go 用 tab，justfile 4 空格），

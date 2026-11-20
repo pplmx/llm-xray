@@ -677,7 +677,19 @@ func TestEveryHeadCountRendersAndCountsItself(t *testing.T) {
 	// word produces, and it reads as broken Chinese. This is checked directly rather than
 	// through the render, because at n_head=4 the corpus happens to read correctly either way.
 
-	for n, want := range map[int]string{1: "一个", 2: "两个", 4: "四个", 8: "八个", 0: "0 个", 12: "12 个"} {
+	// Every numeral 1-10 is listed, not a sample of four. The switch has one arm per number and
+	// each can be wrong on its own: swapping the arms for 六 and 九 left the whole suite green
+	// across a 363s run, because the map only contained 1, 2, 4 and 8. n_head is free as long as
+	// d_model divides by it, so 3, 5, 6, 7, 9 and 10 are all reachable from a loadable
+	// checkpoint — the section titles and verdicts would say the wrong number of heads.
+	//
+	// 11 and above take the digit form, which the app relies on for any head count a reader
+	// might supply; 0 is included because callers compute the count from a slice length.
+	for n, want := range map[int]string{
+		0: "0 个", 1: "一个", 2: "两个", 3: "三个", 4: "四个", 5: "五个",
+		6: "六个", 7: "七个", 8: "八个", 9: "九个", 10: "十个",
+		11: "11 个", 12: "12 个", 16: "16 个",
+	} {
 		if got := headsWord(n); got != want {
 			t.Fatalf("headsWord(%d) = %q, want %q", n, got, want)
 		}

@@ -507,3 +507,59 @@ func TestSampleDrawHandlesADistributionThatSummedLowInFloat32(t *testing.T) {
 		t.Fatalf("x = %v is outside the reported interval [%v, %v]", d.x, d.lo, d.hi)
 	}
 }
+
+// TestChipGlyphAnswersForIndexesItShouldNeverSee pins chipGlyph's bounds guard.
+//
+// The guard is unreachable from the app — every call site passes an index into a.Trace.Tokens —
+// but unlike the readout's placeholder this one is easy to assert directly, because chipGlyph
+// takes the trace as an argument. Measured: narrowing the guard to `tr == nil` alone left the
+// whole suite green across a 366s run.
+//
+// The three out-of-range answers matter because the strip is drawn every frame: an index panic
+// here blanks the window instead of failing one frame, and "?" is what a reader sees for a
+// position that is not a token.
+func TestChipGlyphAnswersForIndexesItShouldNeverSee(t *testing.T) {
+	a := newTestApp(t)
+	tr := a.Trace
+
+	if got := chipGlyph(nil, 0); got != "?" {
+		t.Fatalf("chipGlyph(nil, 0) = %q, want the placeholder", got)
+	}
+	if got := chipGlyph(tr, -1); got != "?" {
+		t.Fatalf("chipGlyph(tr, -1) = %q, want the placeholder", got)
+	}
+	if got := chipGlyph(tr, len(tr.Tokens)); got != "?" {
+		t.Fatalf("chipGlyph(tr, %d) = %q, want the placeholder", len(tr.Tokens), got)
+	}
+
+	// And an index that does exist answers with the token rather than the placeholder, so the
+	// guard is not simply swallowing every call.
+	if got := chipGlyph(tr, 0); got == "?" {
+		t.Fatal("chipGlyph(tr, 0) answered with the placeholder for a real token")
+	}
+}
+
+// TestLabelStrideAnswersForADegenerateCellWidth pins the guard that keeps the loop bounded.
+//
+// labelStride counts up until stride×cw reaches 26 DIP. With cw at or below zero that inequality
+// is true for every stride ever tried, so without the guard the loop runs until float32 overflow
+// turns stride×cw into +Inf or NaN. It does terminate — measured — but with a stride in the
+// billions, which then indexes nothing useful.
+//
+// The existing test sweeps cell widths from 2 to 40 DIP, every one of them positive. Removing the
+// `cw <= 0` guard leaves the whole suite green.
+func TestLabelStrideAnswersForADegenerateCellWidth(t *testing.T) {
+	for _, cw := range []float32{0, -1, -26} {
+		if got := labelStride(cw); got != 1 {
+			t.Fatalf("labelStride(%v) = %d; a cell with no width has no stride to compute, and "+
+				"the answer has to be a value the caller can draw with", cw, got)
+		}
+	}
+
+	// The positive side keeps its contract, so the guard is not swallowing the real cases.
+	for _, cw := range []float32{1, 13, 26, 100} {
+		if got := labelStride(cw); float32(got)*cw < 26 && cw < 26 {
+			t.Fatalf("labelStride(%v) = %d leaves %.1f DIP between labels", cw, got, float32(got)*cw)
+		}
+	}
+}

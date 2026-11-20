@@ -795,3 +795,133 @@ func TestScoreColorAndHeatColorKeepTheirDegenerateBranches(t *testing.T) {
 		prev = heatColor(w).A
 	}
 }
+
+// TestLessonNamesMatchesTheLessons covers the command line's stage list.
+//
+// LessonNames is the one exported function in this package that the app never calls: main.go
+// uses it for the -list flag. Its coverage was 0% — the test that mentions it greps main.go's
+// source for `app.LessonNames()` rather than calling anything, which proves the CLI wires it up
+// but not that it returns the right names.
+//
+// It has to agree with `lessons` in both directions: same count, same order, same spellings. A
+// name that drifts here is a name the `-list` output gets wrong, and a count that drifts is a
+// stage the CLI does not mention.
+func TestLessonNamesMatchesTheLessons(t *testing.T) {
+	names := LessonNames()
+	if len(names) != len(lessons) {
+		t.Fatalf("LessonNames returned %d names for %d lessons", len(names), len(lessons))
+	}
+	for i, l := range lessons {
+		if names[i] != l.name {
+			t.Fatalf("LessonNames()[%d] = %q, but the lesson is %q", i, names[i], l.name)
+		}
+	}
+
+	// A fresh slice each call: the CLI loops over the result, and a caller that sorted or
+	// truncated it in place would otherwise corrupt the next caller's view.
+	first := LessonNames()
+	first[0] = "clobbered"
+	if second := LessonNames(); second[0] == "clobbered" {
+		t.Fatal("LessonNames hands out a slice that aliases the package's own state")
+	}
+	if len(names) == 0 {
+		t.Fatal("LessonNames returned nothing")
+	}
+}
+
+// TestCausalInvarianceLineNamesTheDisagreeingPosition covers the branch that only appears when
+// the mask is broken.
+//
+// The line has two forms: "N 个位置的预测没变" when every position agrees, and "有 K 个的预测变了；
+// 第一个在位置 P" when one does not. Only the first is ever rendered by the app — the bundled
+// weights satisfy the invariant — so the second was at 66.7% coverage and no test mentions its
+// text. It is the branch a reader would see on a day the mask regressed, which is exactly when it
+// has to be right.
+//
+// The comparison is built by hand rather than by breaking the weights, because the branch's input
+// is a struct: what matters is that the formatter names the position instead of only counting.
+func TestCausalInvarianceLineNamesTheDisagreeingPosition(t *testing.T) {
+	a := newTestApp(t)
+	// The line lives in the per-position card on the last stage, under the accuracy figures.
+	a.Step = 6
+
+	clean := causalComparison{OK: true, Compared: 35, Identical: 35}
+	broken := causalComparison{OK: true, Compared: 35, Identical: 34, MismatchAt: 7}
+
+	render := func(cmp causalComparison) string {
+		// causalInvariance re-measures unless the cache claims the current trace, so point the
+		// cache at this trace and let the cached value stand.
+		a.causal, a.causalFor = cmp, a.Trace
+		tr := ui.NewTester(a.View, 1500, 2000)
+		tr.Frame()
+		for _, s := range tr.Texts() {
+			if strings.HasPrefix(s, "因果掩码核对：") {
+				return s
+			}
+		}
+		return ""
+	}
+
+	got := render(clean)
+	if got == "" {
+		t.Fatal("the mask line is not rendered on the Softmax stage")
+	}
+	if !strings.Contains(got, "35 个位置的预测没变") {
+		t.Fatalf("the agreeing line does not state the count: %q", got)
+	}
+	if strings.Contains(got, "变了") {
+		t.Fatalf("the agreeing line claims a change: %q", got)
+	}
+
+	got = render(broken)
+	if got == "" {
+		t.Fatal("the mask line is not rendered when a position disagrees")
+	}
+	if !strings.Contains(got, "有 1 个的预测变了") {
+		t.Fatalf("the disagreeing line does not count the change: %q", got)
+	}
+	if !strings.Contains(got, "第一个在位置 7") {
+		t.Fatalf("the disagreeing line does not name the position; the reader's next question "+
+			"is which one: %q", got)
+	}
+	if strings.Contains(got, "预测没变") {
+		t.Fatalf("the disagreeing line still claims nothing changed: %q", got)
+	}
+}
+
+// TestLayerClampsAnOutOfRangeIndex pins layer()'s three answers.
+//
+// The accessor is called on every stage that reads layer data, and Layer can be set from outside
+// — a checkpoint with fewer layers than the one the reader last selected leaves it past the end.
+// Clamping to the nearest real layer keeps the stage readable; returning nil would blank it.
+//
+// Coverage was 62.5% before this: the app never leaves Layer out of range, so only the middle
+// path ever ran.
+func TestLayerClampsAnOutOfRangeIndex(t *testing.T) {
+	a := newTestApp(t)
+	if len(a.Trace.Layers) < 2 {
+		t.Fatalf("the bundled weights have %d layers; this test needs two to tell them apart",
+			len(a.Trace.Layers))
+	}
+	last := len(a.Trace.Layers) - 1
+
+	a.Layer = 0
+	if got := a.layer(); got != &a.Trace.Layers[0] {
+		t.Fatalf("Layer=0 gave a different layer than Layers[0]")
+	}
+
+	a.Layer = last
+	if got := a.layer(); got != &a.Trace.Layers[last] {
+		t.Fatalf("Layer=%d gave a different layer than Layers[%d]", last, last)
+	}
+
+	a.Layer = -5
+	if got := a.layer(); got != &a.Trace.Layers[0] {
+		t.Fatalf("a negative Layer did not clamp to the first layer")
+	}
+
+	a.Layer = last + 10
+	if got := a.layer(); got != &a.Trace.Layers[last] {
+		t.Fatalf("a Layer past the end did not clamp to the last layer")
+	}
+}

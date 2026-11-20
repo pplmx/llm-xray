@@ -6,6 +6,11 @@
 
 ### Added
 
+- **`pearson` 的三个守位分支一个测试都没有。** 用「生产函数里哪些名字从未在任何测试里出现过」扫出 81 个，多数是视图函数（由 `a.View` 间接执行，覆盖率能证明），但四个纯函数值得逐个看：`pearson`、`maxAbsFloat`、`clampIndex`、`negDims`
+  - `pearson` 是唯一有**三个返回零的分支**的：长度不等、空切片、任一侧零方差。实测这三个分支在真实权重下**全都走不到**——`computeWeightTying` 总是传两段等长且都有方差的切片
+  - 新增 `TestPearsonCoversItsGuardBranches`，并在注释里写明**它验证的是契约而不是可达路径**：与第 25 轮 `stepCell` 的处理方式一致，可触达的补测试、不可触达的说明清楚
+  - 破坏性验证两例：去掉长度/空守卫 → **panic（索引越界）**，测试失败；去掉零方差守卫 → `a constant first slice returned NaN, want 0`
+  - 顺带把正常路径也钉住了（完美线性 → 1、完美反序 → -1），否则三个守位分支就是它唯一被碰到的部分
 - **CONTRIBUTING 里「量焦点环的坑」那段给了一条实用警告，而警告依赖的非对称性没有测试。** 原文：「别用『按 Right 看哪个字段变了』来认控件——`Right` 在文本输入框里不动任何 App 字段，在两个分段控件里改的是 Layer/Head，在按钮上什么也不做」
   - 逐条实测确认警告属实：停点 4 按 Right → `Layer` 0→1、`Head` 不动；停点 5 → `Head` 0→1、`Layer` 不动；停点 1 → `Prompt` 与 `SelToken` 都不变
   - 新增 `TestRightKeyTellsTheControlsApart` 把这三条钉住。破坏性验证：让层控件同时改 `Head` → 报 `also moved Head to 1`；让头控件不响应 → 报 `did not move Head (still 0)`

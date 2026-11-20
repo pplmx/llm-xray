@@ -5004,3 +5004,40 @@ func TestFFNTopShareFiguresAreCurrent(t *testing.T) {
 			"so update both", wantLo, wantHi, wantMean, lo, hi, mean, n)
 	}
 }
+
+// TestPearsonCoversItsGuardBranches pins the three cases pearson answers with zero.
+//
+// The function returns 0 for a length mismatch, for an empty slice and for either input having
+// no variance. None of those can happen on the call path that exists today — computeWeightTying
+// always passes two slices of vocab length, and the bundled weights give both of them variance —
+// so the branches are unreachable from the app. They are here because the contract is "return a
+// correlation or 0", which a future caller may rely on.
+//
+// That distinction is worth stating rather than leaving implicit: a test for an unreachable
+// branch is a test of the contract, not of a route a reader can take. Measured on the bundled
+// weights, both correlations the app computes are non-zero, so deleting all three guards would
+// change nothing today.
+func TestPearsonCoversItsGuardBranches(t *testing.T) {
+	if got := pearson([]float64{1, 2, 3}, []float64{1, 2}); got != 0 {
+		t.Fatalf("a length mismatch returned %v, want 0", got)
+	}
+	if got := pearson(nil, nil); got != 0 {
+		t.Fatalf("empty slices returned %v, want 0", got)
+	}
+	if got := pearson([]float64{5, 5, 5}, []float64{1, 2, 3}); got != 0 {
+		t.Fatalf("a constant first slice returned %v, want 0", got)
+	}
+	if got := pearson([]float64{1, 2, 3}, []float64{5, 5, 5}); got != 0 {
+		t.Fatalf("a constant second slice returned %v, want 0", got)
+	}
+
+	// And the real case has to be a correlation, or the guards above are all that gets exercised.
+	got := pearson([]float64{1, 2, 3, 4}, []float64{2, 4, 6, 8})
+	if math.Abs(got-1) > 1e-12 {
+		t.Fatalf("a perfectly linear pair returned %v, want 1", got)
+	}
+	got = pearson([]float64{1, 2, 3, 4}, []float64{4, 3, 2, 1})
+	if math.Abs(got+1) > 1e-12 {
+		t.Fatalf("a perfectly inverted pair returned %v, want -1", got)
+	}
+}

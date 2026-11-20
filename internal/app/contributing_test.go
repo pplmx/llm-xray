@@ -670,3 +670,84 @@ func TestContributingCodeMapNamesEverySourceFile(t *testing.T) {
 		t.Error("the code map no longer explains why test files are not in the table")
 	}
 }
+
+// TestContributingCheckCIBlockMatchesTheJustfile keeps the quoted gate in step with the real one.
+//
+// The section says `just check-ci` "逐条对应 .github/workflows/ci.yml" and then quotes four
+// commands. The race line read `go test -race ./internal/model/` — no -timeout — while the recipe
+// and the workflow both run `go test -race -timeout 300s ./internal/model/`. The omission is not
+// dangerous by itself (Go's default is ten minutes and the package finishes in about four
+// seconds), which is exactly why nobody would notice it: a reader copying the block gets a
+// different command from the one the repository actually gates on, in the one place that exists to
+// tell them what the gate is.
+//
+// TestCheckCIRecipeMatchesTheWorkflow already holds the recipe and the workflow together, so the
+// only gap was this third copy. It is checked by extracting the fenced block under the
+// "改动的验证标准" heading and requiring every `go` line in it to appear verbatim in the recipe.
+func TestContributingCheckCIBlockMatchesTheJustfile(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "CONTRIBUTING.md"))
+	if err != nil {
+		t.Fatalf("read CONTRIBUTING.md: %v", err)
+	}
+	doc := string(b)
+
+	i := strings.Index(doc, "## 改动的验证标准")
+	if i < 0 {
+		t.Fatal("CONTRIBUTING no longer has a 改动的验证标准 section; update this test")
+	}
+	section := doc[i:]
+	if j := strings.Index(section, "## 测不到的东西"); j >= 0 {
+		section = section[:j]
+	}
+	start := strings.Index(section, "```")
+	if start < 0 {
+		t.Fatal("the 改动的验证标准 section no longer quotes a command block")
+	}
+	body := section[start+3:]
+	if end := strings.Index(body, "```"); end >= 0 {
+		body = body[:end]
+	}
+
+	recipe, err := os.ReadFile(filepath.Join("..", "..", "justfile"))
+	if err != nil {
+		t.Fatalf("read justfile: %v", err)
+	}
+	jf := string(recipe)
+
+	quoted := 0
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// The `just check-ci` line names the recipe itself rather than a command it runs.
+		if !strings.HasPrefix(line, "go ") && !strings.HasPrefix(line, "GOEXPERIMENT=") {
+			continue
+		}
+		// Strip the trailing comment so the comparison is about the command.
+		if k := strings.Index(line, " #"); k >= 0 {
+			line = strings.TrimSpace(line[:k])
+		}
+		quoted++
+		// A quoted line may join two recipe lines with && — the tidy check is two commands in
+		// the recipe (`go mod tidy`, then `git diff --exit-code`) and the guide writes them as
+		// one so a reader can paste it. Every part has to be in the recipe; the joining is
+		// presentation.
+		for _, part := range strings.Split(line, " && ") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			if !strings.Contains(jf, part) {
+				t.Errorf("the guide quotes %q, but the justfile does not contain that command; "+
+					"the block claims to mirror the recipe line for line, so a reader copying it "+
+					"runs something the repository does not gate on", part)
+			}
+		}
+	}
+	if quoted < 3 {
+		t.Fatalf("found %d quoted commands in the verification block; it used to list the three "+
+			"steps beyond `just check`, so either the block was rewritten or this parser stopped "+
+			"matching", quoted)
+	}
+}

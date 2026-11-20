@@ -56,7 +56,7 @@ just run-simd     # 用实验性 SIMD 本机运行
 just check-ci                      # check + 下面三条
 
 go mod tidy && git diff --exit-code -- go.mod go.sum
-go test -race ./internal/model/     # 只有这个包有 goroutine
+go test -race -timeout 300s ./internal/model/     # 只有这个包有 goroutine；见下方为何排除 app
 GOEXPERIMENT=simd go test -timeout 600s ./...   # 实验性 SIMD 内核
 ```
 

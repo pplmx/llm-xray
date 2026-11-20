@@ -659,6 +659,13 @@
 
 ### Fixed
 
+- **CONTRIBUTING 引的那段『逐条对应 ci.yml』的命令里，`-race` 那一条少了 `-timeout 300s`。** 代码块原文是 `go test -race ./internal/model/`，而 `justfile` 的 `check-ci` 与 `ci.yml` 跑的都是 `go test -race -timeout 300s ./internal/model/`
+  - 这个遗漏本身不危险（Go 默认十分钟，而这个包四秒就跑完），**正因如此没人会发现**：一个读者复制这段命令，得到的是与仓库真正门槛不同的命令，而这段代码块存在的全部意义就是告诉他门槛是什么
+  - `TestCheckCIRecipeMatchesTheWorkflow` 早就把 recipe 与 workflow 钉在一起了，缺口是**第三份拷贝**——文档里那段
+  - 新增 `TestContributingCheckCIBlockMatchesTheJustfile`：从「改动的验证标准」一节取出围栏代码块，要求里面每一行 `go` / `GOEXPERIMENT=` 命令都逐字出现在 `justfile` 里
+  - **一处判据需要放宽并说明**：`go mod tidy && git diff --exit-code -- go.mod go.sum` 在 recipe 里是两行、文档写成一行 `&&` 连接。这是展示方式而不是不一致，所以判据按 `&&` 拆开逐段比对，注释里写明理由
+  - 破坏性验证：把 `-timeout 300s` 去掉（原缺陷）→ 报 `quotes "go test -race ./internal/model/"`；把 SIMD 的 600s 改成 300s → 报对应那一行；整行删掉 → 报 `found 2 quoted commands … it used to list the three steps`
+  - 顺带扫了 README 与 CONTRIBUTING 里其余以反引号给出的 `go test` 命令，都能在 `justfile` 或 `ci.yml` 里找到；三份文档的**内部链接与锚点**也全过了一遍（0 处失效）
 - **CONTRIBUTING 的「代码地图」漏了 `internal/app` 里最大的那个文件。** 表格把整个 `internal/app/` 收成一行、只点名 `app.go` / `stages.go` / `widgets.go` / `compact.go`，于是 `workings.go`（2286 行，每段算式背后的全部 `compute*` / `measure*`）在图上不存在
   - 读者按图索骥问「这个数在哪儿算的」，最自然的猜测是 `stages.go`——而它只负责把数画出来。`theme.go`（调色板与字号阶梯）和 `window.go`（窗口下限与单栏断点，`main.go` 的钳制也读它）同样缺席
   - `internal/model/` 也是一整行，没提三个矩阵乘内核——而跑哪一个取决于 `GOEXPERIMENT=simd`

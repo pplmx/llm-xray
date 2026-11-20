@@ -638,6 +638,20 @@
 
 ### Fixed
 
+- **补跑上一轮没跑的三个 CI 门槛，全绿；另外系统扫了九个方向，都没有找到缺陷。** 上一轮只跑了 `just check`，把 `go mod tidy` 校验、`-race` 与 `GOEXPERIMENT=simd` 留在了外面
+  - `go mod tidy` + `git diff --exit-code -- go.mod go.sum`：无差异
+  - `go test -race -timeout 300s ./internal/model/`：ok 4.47s
+  - `GOEXPERIMENT=simd go test -timeout 600s ./...`：ok（`internal/app` 362.96s、model 0.36s）
+  - **顺带量到一个与文档叙述不同的数**：这一步现在与标量（363.4s）几乎相同，而三处注释都说 SIMD 是「380 秒左右」「比标量慢一点」。**没有改**——600s 门槛的由来是当时实测超出 300s，那个结论依然成立；今天两个数持平不能推翻它，写进这里是给下一个人一个参照，免得把 380 当成永久值
+- **本轮验证的九个方向都确认无缺陷，如实记录，免得下一轮重走。**
+  - **手机布局**：三个手机宽度上逐张点击每个卡片索引 chip，卡片标题都落在视口内、`RevealCard` 都被消费；只用 `← ▶ →` 三个按钮能从第 1 步走到第 7 步再走回来（这正是手机唯一的路）；未训练横幅在单栏布局上也照常出现
+  - **卡片可达性**：七个阶段每张卡片的 chip 跳转后标题都在屏内；超宽窗口 2560×720、1180×1440、3840×1080 下检查器标题不越界、没有阶段渲染出空文本
+  - **README 承诺的行为**：60 种长度的 CJK 提示词截断后 token 字节重组仍是合法 UTF-8、且窗口不从半个字符开始；64 token 长提示词下 `Shift+←` 能从第 63 格一路走到第 0 格
+  - **`just docs` 幂等**：跑一遍后六张截图逐字节不变——文档与界面确实同步（`MYGO_DOCS_IMAGES=1` 也通过）
+  - **二进制命令行**：`-step 99` / `-step -1` 列出 0–6 与七个阶段名、`-w 100 -h 100` 提示被抬到 1180×720、权重文件缺失与为空各自给出精确错误，四种都退出码 1
+  - **训练元数据**：`weights.json` 记的 `steps` 是 600、`tools/train.py` 的 `CORPUS_SENTENCES` 是 61 条，与 README 的「600 步」「61 句」一致
+  - 两处**看似缺陷、核实后不是**的，一并记下：README 的「12 MB」现在实际是 12.7 MiB（`mygo` 自己报的就是 12.7 MB），属于「约 N MB」的范围，且 `TestReadmeBinarySizeNamesTheWeightsPart` 的注释已明确说明二进制大小因工具链而不可钉死；`justfile`、`ci.yml`、CONTRIBUTING 里「标量约 400 秒」与我实测的 363 秒也在噪声内（这台机器 `load average` 当时 73）
+  - **三次探针自己写错，都记下来**：拿 `Right` 去问「哪些阶段能改层/头」——`Right` 同时切阶段，结论全是假的；用 `Click(x,y)` 而 `ui.Tester` 的坐标点击叫 `Press`；把断言写在 helper 里的测试误判成「没有失败路径」。**扫描器给线索，不给判决**
 - **上一轮那次改名留下两处旧名字，其中一处的后果是可执行文件变成未跟踪文件。** `go build .` 在仓库根写出以模块名命名的可执行文件，改名之后它叫 `llm-xray`，而 `.gitignore` 里还写着 `/llm-lab`——匹配不到任何东西，于是 `git status` 里多出一个未跟踪的二进制，离一次 `git add -A` 只差一步
   - `tools/train.py` 的文档字符串也还写着「Train the toy GPT that LLM Lab visualizes」，而 README、侧栏标题、`mygo.json` 都已是 llm-xray
   - 新增 `TestGitignoreCoversTheLocalBuildOutput`：**从 `go.mod` 的 module 行读出名字**再要求 `.gitignore` 忽略它，所以下次改名两边一起动。破坏性验证：把规则改回 `/llm-lab` → 报 `does not ignore "/llm-xray" ... the binary would show up as untracked`

@@ -624,6 +624,29 @@ func TestContributingPageLengthMatchesTheLayout(t *testing.T) {
 		t.Fatalf("the tallest stage (stage %d) measures %.2f screens, far past the four the "+
 			"guide states; update the sentence", tallestStep, tallest)
 	}
+
+	// The guide carries a table naming all three statements about length, because they are in
+	// different units and look contradictory side by side. The conversion between them is the
+	// claim, so it is checked rather than only described.
+	//
+	// tall(note) is a total in column screens; the README quotes what sits below the fold in
+	// window heights. Subtracting the visible column screen and converting to window heights is
+	// the step that ties them. Measured at HEAD: 1804 DIP = 4.55 column screens = 2.51 window
+	// screens below the fold, and the README says 两个半屏以上.
+	readme := readREADME(t)
+	if !strings.Contains(readme, "两个半屏以上") {
+		t.Fatal("the README no longer states the below-the-fold figure in the PageUp row")
+	}
+	belowFold := (tallest - 1) * viewport / 720
+	if belowFold < 2.4 {
+		t.Fatalf("the tallest stage is %.2f column screens, which is only %.2f window screens "+
+			"below the fold — the README's 两个半屏以上 and this section's four screens describe "+
+			"the same content and no longer agree", tallest, belowFold)
+	}
+	if belowFold > 4 {
+		t.Fatalf("the tallest stage is %.2f window screens below the fold, past what the README "+
+			"quotes; update both sentences together", belowFold)
+	}
 }
 
 // TestContributingCodeMapNamesEverySourceFile keeps the guide's code map complete.

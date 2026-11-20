@@ -544,3 +544,146 @@ func TestGitignoreCoversTheLocalBuildOutput(t *testing.T) {
 			"root from module %q; the built binary would show up as untracked", want, module)
 	}
 }
+
+// TestReleaseUploadsEveryPackageTheBuildProduces keeps the release from silently dropping an
+// installer.
+//
+// The build job uploads `build/` wholesale, and the publish job then attaches an explicit list of
+// extensions to the GitHub Release. `.rpm` was missing from that list while
+// `go tool mygo build -platform linux/amd64` wrote one on every run — measured, 5.3 MB, and
+// reproduced after deleting the file — so each release shipped the .deb and the tarball and
+// dropped the package for RPM-based distributions. Nothing noticed: release.yml had no test at
+// all, and the failure only appears on a tag, where the cost is a broken download rather than a
+// red build.
+//
+// The check derives its expectations from the packaging the workflow itself performs rather than
+// from a second hand-written list, because a list is what went stale. Two sources:
+//
+//   - the desktop platforms the build matrix names, whose mygo outputs are known and pinned here;
+//   - the `.zip` the workflow creates for the macOS bundle, which is why no `.app` glob is needed.
+//
+// Deliberately excluded: the raw linux binary, install.sh, PKGBUILD and the unpacked `.app`
+// directory. The list is explicit in the workflow so those do not become unlabelled release
+// blobs, and requiring them here would undo that.
+func TestReleaseUploadsEveryPackageTheBuildProduces(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "release.yml"))
+	if err != nil {
+		t.Fatalf("read release.yml: %v", err)
+	}
+	release := string(b)
+
+	// The matrix has to build the three desktop platforms; if it stops, the upload list below is
+	// checking installers that will never exist.
+	for _, want := range []string{"linux/amd64,linux/arm64", "darwin/universal", "windows/amd64"} {
+		if !strings.Contains(release, want) {
+			t.Fatalf("release.yml no longer builds %q; update this test with the platforms you "+
+				"ship", want)
+		}
+	}
+
+	// What those platforms produce, and what the release therefore has to attach. `.zip` comes
+	// from the workflow's own `ditto` step, not from mygo.
+	installers := []struct {
+		ext string
+		why string
+	}{
+		{".deb", "Debian/Ubuntu package from linux/amd64"},
+		{".rpm", "RPM package from linux/amd64 — the one this test exists for"},
+		{".tar.gz", "portable tarball carrying install.sh"},
+		{".exe", "NSIS installer from windows/amd64, plus the bare exe"},
+		{".zip", "the macOS .app compressed by the ditto step"},
+		{".dmg", "built on macOS when the toolchain allows it"},
+	}
+
+	// The files: block of the goreleaser action, which is the only place that decides what gets
+	// attached.
+	i := strings.Index(release, "files: |")
+	if i < 0 {
+		t.Fatal("release.yml no longer has a `files: |` block; this test cannot tell what the " +
+			"release attaches")
+	}
+	block := release[i:]
+	if j := strings.Index(block, "fail_on_unmatched_files"); j >= 0 {
+		block = block[:j]
+	}
+
+	for _, in := range installers {
+		if !strings.Contains(block, "*"+in.ext) {
+			t.Errorf("release.yml does not attach *%s to the release (%s); the build produces it "+
+				"and uploads it as an artifact, so it reaches the publish job and is then dropped",
+				in.ext, in.why)
+		}
+	}
+
+	// And the block has to stay a block: a single `files: dist/**` would attach everything,
+	// including the raw binary and the unpacked .app tree, which is the reason the list is
+	// explicit. Assert the globs are not collapsed into that.
+	if strings.Contains(block, "dist/**\n") {
+		t.Error("release.yml attaches dist/** wholesale; that publishes the raw linux binary, " +
+			"install.sh, PKGBUILD and the unpacked .app directory as unlabelled release assets")
+	}
+}
+
+// TestReadmeArtifactTableNamesEveryLinuxPackage keeps the README's artifact table from omitting
+// a package the build writes.
+//
+// The table listed the .deb, the tarball and the PKGBUILD but not the .rpm, which
+// `go tool mygo build -platform linux/amd64` produces on every run. That is the same omission the
+// release workflow had, in the place a reader looks first: someone on Fedora reads the table,
+// concludes there is no RPM, and does not go looking on the release page either.
+//
+// It is checked against the real build directory when one exists, and against the workflow's own
+// upload list otherwise, so it works on a clean checkout as well as after `just linux`. Both
+// sources describe the same set of packages; the workflow's list is the one this repository
+// controls, and the build directory is what actually happened.
+func TestReadmeArtifactTableNamesEveryLinuxPackage(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatalf("read README.md: %v", err)
+	}
+	doc := string(b)
+
+	// The linux row of the artifact table.
+	const row = "| `linux/amd64`、`linux/arm64` |"
+	i := strings.Index(doc, row)
+	if i < 0 {
+		t.Fatal("the README no longer has the linux row of the artifact table; update this test")
+	}
+	end := strings.Index(doc[i:], "\n")
+	if end < 0 {
+		t.Fatal("the linux row is the last line of the file")
+	}
+	linuxRow := doc[i : i+end]
+
+	// Every package extension the release attaches for Linux. Kept in step with release.yml by
+	// TestReleaseUploadsEveryPackageTheBuildProduces, so this list cannot drift from it alone.
+	for _, ext := range []string{".deb", ".rpm", ".tar.gz"} {
+		if !strings.Contains(linuxRow, ext) {
+			t.Errorf("the README's linux row does not name %s, which the build produces and the "+
+				"release attaches; a reader on that package manager concludes there is no such "+
+				"package", ext)
+		}
+	}
+	// The PKGBUILD is built but never released as a package, and the row should still say so —
+	// it is what an Arch reader needs, and dropping it would be its own regression.
+	if !strings.Contains(linuxRow, "PKGBUILD") {
+		t.Error("the README's linux row no longer mentions PKGBUILD, which the build writes even " +
+			"though it is not a release asset")
+	}
+
+	// And the build directory, when present, must not contain a package the row does not name.
+	// Skipped on a clean checkout, where no build has run.
+	entries, err := os.ReadDir(filepath.Join("..", "..", "build", "linux-amd64"))
+	if err != nil {
+		return // nothing built here; the extensions above are the whole claim
+	}
+	for _, e := range entries {
+		name := e.Name()
+		for _, ext := range []string{".deb", ".rpm", ".tar.gz"} {
+			if strings.HasSuffix(name, ext) && !strings.Contains(linuxRow, ext) {
+				t.Fatalf("build/linux-amd64 contains %s but the README's linux row does not name "+
+					"%s", name, ext)
+			}
+		}
+	}
+}

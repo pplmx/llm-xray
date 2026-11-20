@@ -69,10 +69,20 @@ jobs:
       - name: 上传到 Release
         uses: softprops/action-gh-release@v3
         with:
+          # Every package the build job produces, by extension. The list is explicit rather
+          # than `dist/**` so a stray build/ file (the raw linux binary, install.sh, PKGBUILD,
+          # the unpacked .app tree) does not land in the release as an unlabelled blob.
+          #
+          # `.rpm` was missing here while `go tool mygo build -platform linux/amd64` produced
+          # one every time — measured, 5.3 MB, reproduced on a clean rebuild — so every release
+          # shipped the .deb and the tarball and silently dropped the package for RPM-based
+          # distributions. TestReleaseUploadsEveryPackageTheBuildProduces now requires this list
+          # to cover the extensions the build actually writes.
           files: |
             dist/**/*.dmg
             dist/**/*.zip
             dist/**/*.deb
+            dist/**/*.rpm
             dist/**/*.tar.gz
             dist/**/*.exe
           fail_on_unmatched_files: false

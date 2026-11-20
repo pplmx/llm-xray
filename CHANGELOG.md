@@ -659,6 +659,12 @@
 
 ### Fixed
 
+- **每次发版都会丢掉 Linux 的 RPM 包，而且发版流程此前没有任何测试。** `release.yml` 的 publish 作业用一份**显式扩展名清单**决定哪些产物挂到 GitHub Release 上：`.dmg`、`.zip`、`.deb`、`.tar.gz`、`.exe`——**没有 `.rpm`**。而 `go tool mygo build -platform linux/amd64` 每次都产出一个 `.rpm`（实测 5.3 MB，删掉重建仍在），build 作业也照常把它作为 artifact 上传，于是它一路走到 publish，然后被静默丢弃
+  - 后果只在打 tag 时显现：Fedora / RHEL 用户拿到的是一个缺了包的 release，而不是一次红色的构建
+  - **README 的产物表同样漏了 `.rpm`**——而那是读者先看的地方。有人查表得到「没有 RPM」，也就不会再去 release 页面找
+  - 两处都补上。同时新增 `TestReleaseUploadsEveryPackageTheBuildProduces` 与 `TestReadmeArtifactTableNamesEveryLinuxPackage`，因为 **`release.yml` 此前一条测试都没有**（`ci.yml` 有 `TestCheckCIRecipeMatchesTheWorkflow` 盯着，release 没有对应物）
+  - 守卫的判据刻意是「**从构建实际产出推导**」而不是再抄一份清单——清单正是这次过期的东西。workflow 侧检查六种扩展名都要在 `files:` 块里，并拒绝把它折叠成 `dist/**`（那样会把裸二进制、`install.sh`、`PKGBUILD` 和未压缩的 `.app` 目录一并挂上去）；README 侧在有 `build/` 时直接读真实目录，要求表里点名的扩展名与文件系统一致
+  - 破坏性验证：移除 `.rpm` → 报 `does not attach *.rpm … the build produces it … and is then dropped`；`.deb`/`.tar.gz`/`.exe`/`.zip`/`.dmg` 各自移除也各自报红（六次独立验证，没有一条被公共分支兜过去）；把 `files:` 改成 `dist/**` → 同时报出缺 `.zip`/`.dmg` 与「会挂上未标注的产物」；README 侧删 `.rpm` → 报 `build/linux-amd64 contains … .rpm but the README's linux row does not name .rpm`，删 `PKGBUILD` → 单独报红
 - **`TestCheckCIRecipeMatchesTheWorkflow` 的注释把 `just check` 说成「about 35 seconds」，实际已是六分钟，低估十倍。** 这个数字在写下时是真的——那个提交同时记着 `race 3.0s、SIMD 34.4s、check-ci 39s warm`——之后 MyGo v0.9.1 把新窗口首帧从 13.2ms 抬到 50.3ms，而每个 tester 都是一次新窗口，同一个门槛就涨到了六分钟
   - 处理方式不是「改成正确的秒数」，而是**把时长从注释里删掉**：它没有主人，而 CONTRIBUTING 才是读者用来规划的那个来源。这条测试关心的是**跑哪些命令**，不是跑多久
   - 注释里保留了这段来历，因为「一个曾经准确的数字怎么变假的」比数字本身有用

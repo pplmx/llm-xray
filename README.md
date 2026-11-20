@@ -68,7 +68,7 @@ just clean      # 清空 build/
 
 | 目标 | 产物 |
 | --- | --- |
-| `linux/amd64`、`linux/arm64` | 可执行文件、`llm-xray_<ver>_<arch>.deb`、带 `install.sh` 的 `.tar.gz`、`PKGBUILD` |
+| `linux/amd64`、`linux/arm64` | 可执行文件、`llm-xray_<ver>_<arch>.deb`、`llm-xray-<ver>-1.<arch>.rpm`、带 `install.sh` 的 `.tar.gz`、`PKGBUILD` |
 | `windows/amd64` | `llm-xray.exe`；在 Windows 上构建时自动补 `llm-xray-setup-<ver>-amd64.exe`（NSIS） |
 | `darwin/universal` | `llm-xray.app`（同时含 arm64 与 amd64）；在 macOS 上构建时额外产出 `.dmg`，可配置签名/公证 |
 | `android/arm64` | `llm-xray-<ver>.apk` 与 `llm-xray-<ver>.aab`（Play 用后者）；默认用调试密钥签名，见[手机与平板](#手机与平板) |

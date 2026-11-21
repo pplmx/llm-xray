@@ -807,6 +807,12 @@
 
 ### Fixed
 
+- **上一轮改 `colFaint` 之后，两处注释里「它是 4.46:1、刚好不到 4.5」这个理由就过期了，但代码没跟着变。** `stages.go` 的字节数字 chip 与 `widgets.go` 的 token 条 id 都写着同一句「colFaint on colPanel2 is 4.46:1, just under the 4.5」
+  - 实测现在 `colFaint` 是 **4.503:1**（已达标），所以那句理由不再成立。**但两个地方仍然应该用 `colMuted`**——因为它们画在**16% 强调色叠加**上，那里 `colFaint` 只有 **3.60:1** 与 **3.88:1**
+  - 结论没变、理由变了：注释改成「colFaint 现在达标，但叠加 tint 后仍是 3.60，所以这里用 colMuted」
+  - 顺带发现另一处截断式写法：`colAccentOnTint` 注释写 `5.7:1`，实测 `5.768`——一位小数应进位成 **5.8**，按第 38 轮的标准改注释
+  - 新增 `TestContrastFiguresInCommentsMatchTheColours`，**从 `theme.go` 的注释里解析出比值**再与颜色实测比对（早一版把数字抄进测试里，那样只能证明测试和代码一致，注释仍可任意写）。注释跨行，所以先把 `// ` 前缀与换行压成单行
+  - 破坏性验证两例：注释改成 `5.7` → `theme.go says 5.700:1, the colours measure 5.768`；把颜色退回 `#7C879B` → `theme.go says 4.503:1, the colours measure 4.457`
 - **`colFaint` 没达到它自己注释里写的对比度门槛，而现有对比度测试恰好绕开了那一面。** 注释写「用于 10px 标签，所以必须对面板色达到 4.5:1」（10px 远低于 WCAG 放宽到 3:1 所需的字号），实测 `#7C879B` 在 `colPanel2` 上是 **4.457:1**
   - 现有对比度测试查的是 `colFaint` 对 `colBg`（5.27:1）与侧栏面板，**从没查过它画在最暗那一面 `colPanel2` 上的情况**——而 10px 的说明文字正好大量画在那里
   - 旁证：同文件里另一段注释已经注意到了症状（「colFaint measures 3.58:1 and 3.69:1 there」），但当时的修法是把那两个 chip 改用 `colMuted`，**没有把常量本身改对**。两件事都值得做，但常量得自己站得住

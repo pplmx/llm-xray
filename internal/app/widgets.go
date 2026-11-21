@@ -128,10 +128,10 @@ func (a *App) tokenRailChips(c *ui.Context, tokens []modelToken) {
 		chip.Draw(func(p *ui.Painter, r ui.Rect) {
 			// colMuted, not colFaint: the chip sits on colPanel normally,
 			// colPanel2 under the pointer and an accent tint when selected.
-			// colFaint measures 4.46:1 on colPanel2 and 3.58–3.88:1 on the tints
-			// (3.58 at 16% over colPanel2, 3.88 at 16% over colPanel) — all under
-			// the 4.5 a 10px digit needs. colMuted clears every state, worst case
-			// 5.22:1.
+			// colFaint clears the plain surfaces now (4.503:1 on colPanel2 since
+			// #80879B), but it falls to 3.60:1 and 3.88:1 on the two tints — both
+			// under the 4.5 a 10px digit needs. colMuted clears every state, worst
+			// case 5.20:1.
 			id := ui.Span{Text: fmt.Sprint(tk.ID), Size: fontMicro, Color: colMuted}
 			w, _ := p.MeasureText(0, id)
 			p.RichText(r.X+(r.W-w)/2, r.Y+r.H-13, 0, id)

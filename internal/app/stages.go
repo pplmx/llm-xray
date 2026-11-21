@@ -313,9 +313,11 @@ func (a *App) stageTokens(c *ui.Context) {
 					ui.Text(c, label).FontSize(fontData).TextColor(colText)
 					ui.Row(c).Gap(2).Children(func() {
 						for _, b := range g.bytes {
-							// colFaint on colPanel2 is 4.46:1, just under the
-							// 4.5 this 10px digit needs. colMuted clears 6.5:1
-							// and still reads as a caption beside the rune.
+							// colMuted, not colFaint: colFaint now clears 4.5 on
+							// colPanel2 (4.503:1 since #80879B), but a 10px digit on a
+							// tinted chip still would not — it measures 3.60:1 under the
+							// 16% accent tint. colMuted clears 6.5:1 here and the tinted
+							// states too, and still reads as a caption beside the rune.
 							ui.Text(c, fmt.Sprintf("%d", b)).FontSize(fontMicro).TextColor(colMuted).
 								Padding(2, 3).Radius(3).Background(colPanel2)
 						}

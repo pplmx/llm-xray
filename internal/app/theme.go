@@ -39,7 +39,7 @@ var (
 	colAccent = ui.Hex("#8B7BFF")
 	// colAccentOnTint is colAccent lightened just enough to read on the 16%
 	// accent tint behind the inspector's token glyph. Plain colAccent lands at
-	// 4.22:1 there, under the 4.5 the small bold glyph needs; this clears 5.7:1
+	// 4.22:1 there, under the 4.5 the small bold glyph needs; this clears 5.8:1
 	// while still reading as the accent rather than as plain text.
 	colAccentOnTint = ui.Hex("#A79AFF")
 	colAccent2      = ui.Hex("#4CC2FF")

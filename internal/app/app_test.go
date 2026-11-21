@@ -10429,3 +10429,62 @@ func TestFaintTextClearsTheThresholdItWasChosenFor(t *testing.T) {
 		}
 	}
 }
+
+// TestContrastFiguresInCommentsMatchTheColours keeps the numbers in the theme's comments true.
+//
+// Several comments justify a colour choice by quoting a WCAG ratio. Those figures are checkable,
+// and they go stale the moment a colour changes: making colFaint clear its own 4.5 threshold left
+// two comments still claiming it measured 4.46:1, and one still said colAccentOnTint cleared
+// 5.7:1 when it measures 5.768. The choices were right; the stated reasons had expired.
+//
+// The figure is read out of theme.go rather than copied here, so this checks the comment against
+// the colours rather than the test against itself.
+func TestContrastFiguresInCommentsMatchTheColours(t *testing.T) {
+	src, err := os.ReadFile("theme.go")
+	if err != nil {
+		t.Fatalf("read theme.go: %v", err)
+	}
+	// Comments wrap across lines, so join them into one stream: "Plain colAccent lands at" and
+	// its figure sit on different lines, separated by the "// " prefix.
+	comment := regexp.MustCompile(`(?m)^\t// ?`).ReplaceAllString(string(src), " ")
+	comment = strings.ReplaceAll(comment, "\n", " ")
+	comment = regexp.MustCompile(" +").ReplaceAllString(comment, " ")
+	tint16Panel := over(colAccent.Alpha(0.16), colPanel)
+
+	// Each case names the comment, the phrase just before its figure, and the colours that
+	// phrase is about. The figure is parsed out of the text.
+	cases := []struct {
+		what     string
+		fg, bg   ui.Color
+		before   string
+		decimals int
+	}{
+		{"colAccentOnTint on the inspector tint", colAccentOnTint, tint16Panel, "this clears ", 1},
+		{"plain colAccent on the inspector tint", colAccent, tint16Panel, "Plain colAccent lands at ", 2},
+		{"colFaint on colPanel2", colFaint, colPanel2, "#80879B measures ", 3},
+	}
+	for _, c := range cases {
+		i := strings.Index(comment, c.before)
+		if i < 0 {
+			t.Errorf("%s: theme.go no longer says %q, so this test cannot find the figure",
+				c.what, c.before)
+			continue
+		}
+		rest := comment[i+len(c.before):]
+		re := regexp.MustCompile(`^([0-9]+\.[0-9]+):1`)
+		m := re.FindStringSubmatch(rest)
+		if m == nil {
+			t.Errorf("%s: %q is not followed by a ratio", c.what, c.before)
+			continue
+		}
+		stated, err := strconv.ParseFloat(m[1], 64)
+		if err != nil {
+			t.Fatalf("read %q: %v", m[1], err)
+		}
+		got := contrastRatio(c.fg, c.bg)
+		rounded := math.Round(got*math.Pow(10, float64(c.decimals))) / math.Pow(10, float64(c.decimals))
+		if rounded != stated {
+			t.Errorf("%s: theme.go says %.3f:1, the colours measure %.3f:1", c.what, stated, got)
+		}
+	}
+}

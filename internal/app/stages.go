@@ -761,6 +761,17 @@ func (a *App) stageMaskCounterfactual(c *ui.Context) {
 	}
 	h := l.Heads[a.Head]
 	mean, rows := meanFutureShare(h, n, dh)
+	// The range across heads, measured on this prompt. It used to be the literal "51%–84%",
+	// which was true for the prompt it was written on and false for most others: measured on
+	// the bundled weights, 注意力就是加权求和 gives 50%–55% and hi gives 26%–97%, so the
+	// sentence contradicted its own numbers on two of the four bundled presets.
+	headLo, headHi := 1.0, 0.0
+	for head := range l.Heads {
+		if m, r := meanFutureShare(l.Heads[head], n, dh); r > 0 {
+			headLo = math.Min(headLo, m)
+			headHi = math.Max(headHi, m)
+		}
+	}
 	if rows == 0 {
 		return
 	}
@@ -788,7 +799,8 @@ func (a *App) stageMaskCounterfactual(c *ui.Context) {
 		// an artefact of the one row the reader happens to be on.
 		workingsLinesCopyable(c, []string{
 			fmt.Sprintf("这一行去掉掩码后，%.0f%% 的注意力会落在自己之后的位置上", 100*cf.FutureShare),
-			fmt.Sprintf("头 %d 整句平均是 %.0f%%（%d 行）——每个头都在 51%%–84%% 之间", a.Head, 100*mean, rows),
+			fmt.Sprintf("头 %d 整句平均是 %.0f%%（%d 行）——每个头都在 %.0f%%–%.0f%% 之间",
+				a.Head, 100*mean, rows, 100*headLo, 100*headHi),
 			fmt.Sprintf("熵：模型实算 %.2f → 去掉掩码 %.2f nats", cf.VisibleEntropy, cf.MeanEntropy),
 		})
 		// Row 0 is computed on its own rather than assumed. The first draft used the

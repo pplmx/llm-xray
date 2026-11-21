@@ -3,6 +3,7 @@ package app
 import (
 	"github.com/egoist/mygo/ui"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -1096,5 +1097,61 @@ func TestComputeLayerDivergenceRejectsEveryBadIndex(t *testing.T) {
 	if d := computeLayerDivergence(shrunk, 1, 3, 2); d.Ok {
 		t.Fatalf("head 3 was accepted although the previous layer has %d head(s)",
 			len(shrunk[0].Heads))
+	}
+}
+
+// TestMaskCounterfactualHeadRangeIsMeasured keeps the mask card's per-head range from becoming a
+// literal again.
+//
+// The line read "...每个头都在 51%–84% 之间" — a range measured once, on one prompt, then written
+// into the sentence. The card states it as a property of the model, and it was false on two of the
+// four bundled presets: measured, 注意力就是加权求和 gives 50%–55% and hi gives 26%–97%. The
+// neighbouring figures in the same line were computed, so the sentence contradicted itself.
+//
+// The test renders the line on two prompts and requires the range to track the data, which is
+// what makes it a statement about the model rather than about one sentence.
+func TestMaskCounterfactualHeadRangeIsMeasured(t *testing.T) {
+	line := func(prompt string) string {
+		a := newTestApp(t)
+		a.Prompt = prompt
+		a.recompute()
+		a.Step = 2
+		a.Head = 0
+		tr := ui.NewTester(a.View, 1500, 2000)
+		tr.Frame()
+		for _, s := range tr.Texts() {
+			if strings.HasPrefix(s, "头 0 整句平均是") {
+				return s
+			}
+		}
+		return ""
+	}
+
+	en := line("The transformer reads the tokens and")
+	zh := line("注意力就是加权求和")
+	if en == "" || zh == "" {
+		t.Fatalf("the mask card does not draw its per-head line (en=%q, zh=%q)", en, zh)
+	}
+	if en == zh {
+		t.Fatalf("both prompts produced the same line, so at least one is not measured:\n  %s", en)
+	}
+	if strings.Contains(en, "51%–84%") || strings.Contains(zh, "51%–84%") {
+		t.Fatalf("the line still carries the old literal range:\n  en: %s\n  zh: %s", en, zh)
+	}
+
+	// And the range has to be internally consistent: the head being shown sits inside it.
+	re := regexp.MustCompile(`头 0 整句平均是 (\d+)%（\d+ 行）——每个头都在 (\d+)%–(\d+)% 之间`)
+	for _, s := range []string{en, zh} {
+		m := re.FindStringSubmatch(s)
+		if m == nil {
+			t.Fatalf("the line no longer has the shape this test reads: %q", s)
+		}
+		mean, _ := strconv.Atoi(m[1])
+		lo, _ := strconv.Atoi(m[2])
+		hi, _ := strconv.Atoi(m[3])
+		if mean < lo || mean > hi {
+			t.Fatalf("the shown head's mean (%d%%) sits outside the range it states (%d%%–%d%%): %q",
+				mean, lo, hi, s)
+		}
 	}
 }

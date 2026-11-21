@@ -858,6 +858,12 @@
 
 ### Fixed
 
+- **一处「找不到元素就跳过」的分支，元素名从未被渲染过，所以那行 `t.Skip` 永远不会执行。** `scroll_test.go:61` 写 `if _, ok := tr.Find("输入 0 · 一次加法"); ok { t.Skip(...) }`
+  - 实测：`Find` 在阶段 5、1180×720 下**返回 false**，而这个字符串在渲染代码里根本不存在。那行 `t.Skip` 是**死代码**
+  - 而且它的条件对想表达的意思是**反的**：上一段已经用 `a.Scroll.Y == 0` 的 `Fatal` 判断过「有没有滚动」了，「滚动没移动东西」这件事在那里就决定了，不需要这个分支
+  - 删掉那个分支，把原代码与删除理由留在注释里
+- **另一处同族但仍在生效的跳过改成了 `Fatal`**：`TestClickableChipsGiveHoverFeedback` 的子测试找不到「长提示词」预设 chip 时 `t.Skip`。空提示词卡片**总是**列出预设，所以找不到意味着卡片挪位或 chip 改名——**测试失效**，不是平台不支持。和第 95 轮同样的处理
+  - 破坏性验证：把 chip 改名 → 子测试 `FATAL` 并报出 `the 长提示词 preset chip is not on stage 1's empty-prompt card`
 - **分数矩阵图例的设计依据里，两个数字都对不上。** 注释说「sign and relative weight disagree in **27%** of this model's cells, and **212** negative scores still land in their row's top 3」，用来解释为什么不把暖色标成「negative: suppresses attention」
   - 实测：两层四头合计，840 个 top-3 槽位里 **249 个**是负分数（29.6%）。分层是 135 与 114，**212 与任何组合都对不上**
   - 「27%」取决于「disagree」怎么定义——我按几种定义分别得到 33% 和别的值，注释里没有说定义

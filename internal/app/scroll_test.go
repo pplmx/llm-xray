@@ -57,10 +57,16 @@ func TestScrollingAStageKeepsTheHeaderOnScreen(t *testing.T) {
 		}
 	}
 
-	// And the content really did move, or the assertion above proves nothing.
-	if _, ok := tr.Find("输入 0 · 一次加法"); ok {
-		t.Skip("the residual card fits this window, so scrolling moved nothing to test")
-	}
+	// This used to hold:
+	//
+	//	if _, ok := tr.Find("输入 0 · 一次加法"); ok {
+	//		t.Skip("the residual card fits this window, so scrolling moved nothing to test")
+	//	}
+	//
+	// The text has never been rendered — measured, Find returns false on stage 5 at 1180x720 —
+	// so the branch could not run and the skip it guarded could not fire. Worse, the condition
+	// was inverted for what it was trying to say: the assertion above already fails when the
+	// column does not scroll, so "scrolling moved nothing" was decided there, not here.
 
 	// The header is still inside the window, not pushed off the top.
 	for label, p := range after {

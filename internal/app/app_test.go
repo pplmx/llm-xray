@@ -5277,7 +5277,13 @@ func TestClickableChipsGiveHoverFeedback(t *testing.T) {
 		tr.Frame()
 		r, ok := tr.Find("长提示词")
 		if !ok {
-			t.Skip("the preset chip is not on this frame")
+			// Not a skip. The empty-prompt card always lists the presets, so a frame without
+			// them means the card moved or the chip was renamed — either way this subtest has
+			// stopped testing what it says. A skip here reported "did not run" when the truth
+			// would be "the thing you are looking for is gone".
+			t.Fatal("the 长提示词 preset chip is not on stage 1's empty-prompt card; the subtest " +
+				"below checks its hover feedback, so find where the card moved rather than " +
+				"letting this go unrun")
 		}
 		before := tr.Image()
 		tr.Move(r.X+r.W/2, r.Y+r.H/2)

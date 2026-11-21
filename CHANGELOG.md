@@ -6,6 +6,10 @@
 
 ### Added
 
+- **README 写「训练 600 步」，而顶栏渲染的是 `w.Steps`，两者可以各说各的。** 把 `weights.json` 的 `steps` 改成 750，所有 README 与卡片测试全绿——界面会显示「训练 750 步 · loss 1.019」，上面那句话仍写 600
+  - 新增 `TestReadmeTrainingStepsMatchesTheWeights`：从**二进制实际 embed 的那份 checkpoint** 读步数，要求 README 用同一个数，并要求顶栏**真的**把它渲染出来（否则这句话说的是读者看不见的元数据）
+  - 破坏性验证两例：`steps = 750` → `the README does not say "750 步"`；README 改成 500 → `the README does not say "600 步"`
+  - 顺手把 README 那段出处说明里的数字核了一遍：参数量、六个架构常量（第 39 轮已有守卫）、61 句（第 58 轮）、600 步（本轮）、约 45 秒（环境相关，不宜钉）。**这一段现在全部有来源**
 - **「61 句」写在三处，而这三处与它们的来源之间没有任何机制。** 这个数字指的是训练语料大小，语料本身在 `tools/train.py` 的 `CORPUS_SENTENCES` 里（实测确实是 61 条）
   - 实测：往 `train.py` 里加**第 62 句**，所有卡片与 README 测试全绿——界面会继续声称一个脚本里并不存在的语料规模
   - 新增 `TestCorpusSentenceCountMatchesTheTrainingScript`：从 Python 源码里数出条数（每行一个引号字面量），要求 `stages.go` 的两处与 `docs/cards.md` 的一处都用这个数。数出不足 5 条时直接报「列表形状变了、这个解析器读不了」，而不是猜一个值

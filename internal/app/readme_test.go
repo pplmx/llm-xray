@@ -1311,3 +1311,41 @@ func TestReadmeDimensionReadoutMatchesTheStrip(t *testing.T) {
 	t.Fatalf("hovering d%d renders no %q readout, so the README's example cannot be checked "+
 		"against the app", dim, want)
 }
+
+// TestReadmeTrainingStepsMatchesTheWeights keeps the provenance sentence tied to the checkpoint.
+//
+// The README says the weights were trained for 600 steps, and the top bar renders exactly that
+// number from w.Steps — so the document and the screen state the same fact from two places.
+// Measured: setting steps to 750 in weights.json left every README and card test green, while the
+// bar would then read "训练 750 步 · loss 1.019" under a sentence claiming 600.
+//
+// The figure is read from the checkpoint the binary embeds, not from a copy of the number.
+func TestReadmeTrainingStepsMatchesTheWeights(t *testing.T) {
+	a := newTestApp(t)
+	if a.W.Steps <= 0 {
+		t.Fatal("the bundled weights record no step count; the README's provenance sentence has " +
+			"nothing to agree with")
+	}
+
+	doc := readREADME(t)
+	want := fmt.Sprintf("%d 步", a.W.Steps)
+	if !strings.Contains(doc, want) {
+		t.Fatalf("the README does not say %q, which is what the bundled checkpoint records and "+
+			"what the top bar renders", want)
+	}
+
+	// And the bar really does render it, so the sentence is about something visible rather than
+	// about metadata no reader ever sees.
+	tr := ui.NewTester(a.View, 1500, 940)
+	tr.Frame()
+	rendered := false
+	for _, s := range tr.Texts() {
+		if strings.Contains(s, want) && strings.Contains(s, "loss") {
+			rendered = true
+			break
+		}
+	}
+	if !rendered {
+		t.Fatalf("no line renders the step count %q beside the loss", want)
+	}
+}

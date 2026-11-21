@@ -231,32 +231,6 @@ func expNeg(x float32) float32 {
 	return expTable[i] + frac*(expTable[i+1]-expTable[i])
 }
 
-// softmaxInPlace normalizes scores to a distribution, skipping -Inf entries.
-func softmaxInPlace(scores []float32) {
-	max := float32(math.Inf(-1))
-	for _, v := range scores {
-		if v > max {
-			max = v
-		}
-	}
-	var sum float32
-	for i, v := range scores {
-		if math.IsInf(float64(v), -1) {
-			scores[i] = 0
-			continue
-		}
-		e := float32(math.Exp(float64(v - max)))
-		scores[i] = e
-		sum += e
-	}
-	if sum == 0 {
-		return
-	}
-	for i := range scores {
-		scores[i] /= sum
-	}
-}
-
 // softmaxCausal writes the softmax of the first n scores into dst and zeroes
 // the rest of dst, which is the shape causal attention stores. Only the
 // unmasked entries are visited; the -Inf tail is never exponentiated.

@@ -847,6 +847,11 @@
 
 ### Fixed
 
+- **`softmaxInPlace` 是死代码，由它自己的测试保活。** 前向传播用的是 `softmaxCausal`——那个只处理前 n 个位置、因此不需要 `-Inf` 分支的专用版本。`softmaxInPlace` 曾是一般版本，重构后没有任何生产代码调用它，只有 `TestSoftmaxSumsToOne` 还在调
+  - 它因此躲过了死代码检测：检测器扫描 `*.go` 包含 `_test.go`，测试里的调用算作「被引用」。这是有意的设计（测试直接调一个函数是合理的），代价就是**测试可以成为生产代码唯一的活因**
+  - 删除函数与那条测试。跨包覆盖率 **96.7% → 96.8%**，且全仓**再无 0% 的函数**
+  - **一个测量方法上的重要发现**：我一开始用 `go test ./internal/model` 看到 `LogitLens`、`Softmax`、`Entropy` 都是 **0%**，差点当成三个未测试的函数。实际是**测量口径错**——单包测试统计不到另一个包对它的调用。用 `-coverpkg=./internal/...` 合并后，它们是 **100% / 100% / 92.9%**
+  - **这个口径问题值得记住**：`go test ./pkg` 的 `-coverprofile` 只记录该包自己测试执行到的代码；跨包调用要 `-coverpkg` 才可见
 - **我自己在第 53 轮写错的说明：`LessonNames` 并不服务于 `-list`。** 那条 CHANGELOG 写「它是唯一被 `main.go` 调用、而 app 自己不用的导出函数（**CLI 的 `-list`**）」，测试注释里也重复了同一句「main.go uses it for the -list flag」
   - 实测：`main.go` 里**没有 `-list` 这个 flag**（`/tmp/llmx -list` 报 `flag provided but not defined`）。`LessonNames` 的真正用途是 `-step` 越界时的错误消息——`-step 99 is out of range: lessons are numbered 0-6 (分词, 嵌入, 注意力分数, …)`
   - 修正 CHANGELOG 与测试注释，并新增 `TestLessonNamesIsUsedForTheStepRange`：要求 `main.go` 仍把 `app.LessonNames()` 赋给 `names`、仍用它与 `-step` 比较，并且**没有**长出 `-list` flag

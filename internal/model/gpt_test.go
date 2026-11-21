@@ -13,21 +13,6 @@ func smallWeights(t *testing.T) *Weights {
 	return Random(Config{Vocab: 256, DModel: 32, NLayer: 2, NHead: 4, DFF: 64, Ctx: 16}, 7)
 }
 
-func TestSoftmaxSumsToOne(t *testing.T) {
-	s := []float32{1, 2, 3, -1}
-	softmaxInPlace(s)
-	var sum float32
-	for _, v := range s {
-		if v < 0 || v > 1 {
-			t.Fatalf("probability out of range: %v", v)
-		}
-		sum += v
-	}
-	if math.Abs(float64(sum-1)) > 1e-6 {
-		t.Fatalf("sum = %v, want 1", sum)
-	}
-}
-
 func TestCausalMask(t *testing.T) {
 	w := smallWeights(t)
 	ids := []int{65, 66, 67, 68, 69}

@@ -369,3 +369,52 @@ func TestWorkingsTriplesMatchThePackageComment(t *testing.T) {
 			"are named individually now because a count is what was wrong before")
 	}
 }
+
+// TestBundledWeightsFailureIsNeverSkipped keeps a broken build from looking like a green run.
+//
+// The weights are embedded with go:embed, so model.Bundled() can only fail if the embedded JSON is
+// missing or unparseable — a build that is wrong, not a platform that cannot run the test. Fifteen
+// call sites in these two packages used to answer that with t.Skipf, and one of them would have
+// turned a corrupt bundle into a test that quietly never ran. They all fail the test now, and this
+// keeps the pattern from coming back.
+func TestBundledWeightsFailureIsNeverSkipped(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	modelFiles, err := filepath.Glob("../model/*_test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files = append(files, modelFiles...)
+
+	skips := 0
+	for _, name := range files {
+		if !strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, err := readFileString(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		for i, line := range strings.Split(src, "\n") {
+			if !strings.Contains(line, "t.Skip") {
+				continue
+			}
+			// The skip's own message, or the few lines after it, may name the bundle.
+			end := i + 3
+			if end > len(strings.Split(src, "\n")) {
+				end = len(strings.Split(src, "\n"))
+			}
+			window := strings.Join(strings.Split(src, "\n")[i:end], "\n")
+			if strings.Contains(window, "bundled") || strings.Contains(window, "weights") {
+				t.Errorf("%s:%d skips on a bundle failure; the bundle is embedded, so this is a "+
+					"broken build and the test must fail: %s", name, i+1, strings.TrimSpace(line))
+				skips++
+			}
+		}
+	}
+	if skips > 0 {
+		t.Fatalf("%d skip(s) remain on the bundled-weights path", skips)
+	}
+}

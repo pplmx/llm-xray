@@ -729,7 +729,10 @@ func TestReadmeBinarySizeNamesTheWeightsPart(t *testing.T) {
 
 	info, err := os.Stat(filepath.Join("..", "model", "weights.json"))
 	if err != nil {
-		t.Skipf("no weights file to measure: %v", err)
+		// Not a skip: the file is part of the checkpoint the package embeds, so its absence is a
+		// broken checkout, not an unsupported platform. A skip here would let the size sentence
+		// go unchecked while the run stayed green.
+		t.Fatalf("the bundled weights file must exist to size the README's claim: %v", err)
 	}
 	mb := float64(info.Size()) / (1 << 20)
 	// The sentence quotes one decimal place, so anything inside half a tenth of 2.3 is the

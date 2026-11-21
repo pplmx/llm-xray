@@ -257,7 +257,10 @@ func standaloneNumber(n string) *regexp.Regexp {
 func TestNoStageNamesTheBundleConfigAtAnotherWidth(t *testing.T) {
 	base, err := model.Bundled()
 	if err != nil {
-		t.Skipf("no bundled weights: %v", err)
+		// Fatal, not Skip. These weights are go:embed-ed into the binary, so this error means
+		// the embedded JSON is missing or unparseable — a broken build, not an unsupported
+		// platform. Skipping would turn that into a green run with the test silently absent.
+		t.Fatalf("bundled weights are embedded in the binary and must parse: %v", err)
 	}
 	narrow := narrowWeights(base)
 	if narrow.Config.DModel == base.Config.DModel {
@@ -371,7 +374,10 @@ func dropLayerWeights(base *model.Weights) *model.Weights {
 func TestNoStageNamesTheBundleFeedForwardWidth(t *testing.T) {
 	base, err := model.Bundled()
 	if err != nil {
-		t.Skipf("no bundled weights: %v", err)
+		// Fatal, not Skip. These weights are go:embed-ed into the binary, so this error means
+		// the embedded JSON is missing or unparseable — a broken build, not an unsupported
+		// platform. Skipping would turn that into a green run with the test silently absent.
+		t.Fatalf("bundled weights are embedded in the binary and must parse: %v", err)
 	}
 	narrow := halfDFFWeights(base)
 	if narrow.Config.DFF == base.Config.DFF {
@@ -418,7 +424,10 @@ func TestNoStageNamesTheBundleFeedForwardWidth(t *testing.T) {
 func TestCardsThatCompareLayersNeedTwoOfThem(t *testing.T) {
 	base, err := model.Bundled()
 	if err != nil {
-		t.Skipf("no bundled weights: %v", err)
+		// Fatal, not Skip. These weights are go:embed-ed into the binary, so this error means
+		// the embedded JSON is missing or unparseable — a broken build, not an unsupported
+		// platform. Skipping would turn that into a green run with the test silently absent.
+		t.Fatalf("bundled weights are embedded in the binary and must parse: %v", err)
 	}
 	one := dropLayerWeights(base)
 	if one.Config.NLayer >= 2 {
@@ -472,7 +481,10 @@ func TestCardsThatCompareLayersNeedTwoOfThem(t *testing.T) {
 func TestNoStageNamesTheBundleContextAtAnotherWindow(t *testing.T) {
 	base, err := model.Bundled()
 	if err != nil {
-		t.Skipf("no bundled weights: %v", err)
+		// Fatal, not Skip. These weights are go:embed-ed into the binary, so this error means
+		// the embedded JSON is missing or unparseable — a broken build, not an unsupported
+		// platform. Skipping would turn that into a green run with the test silently absent.
+		t.Fatalf("bundled weights are embedded in the binary and must parse: %v", err)
 	}
 	small := *base
 	small.Config = base.Config
@@ -559,7 +571,10 @@ func TestNoStageNamesTheBundleContextAtAnotherWindow(t *testing.T) {
 func TestNoStageNamesTheBundleVocabulary(t *testing.T) {
 	base, err := model.Bundled()
 	if err != nil {
-		t.Skipf("no bundled weights: %v", err)
+		// Fatal, not Skip. These weights are go:embed-ed into the binary, so this error means
+		// the embedded JSON is missing or unparseable — a broken build, not an unsupported
+		// platform. Skipping would turn that into a green run with the test silently absent.
+		t.Fatalf("bundled weights are embedded in the binary and must parse: %v", err)
 	}
 	small := *base
 	small.Config = base.Config
@@ -631,7 +646,10 @@ func headsWeights(base *model.Weights, n int) *model.Weights {
 func TestEveryHeadCountRendersAndCountsItself(t *testing.T) {
 	base, err := model.Bundled()
 	if err != nil {
-		t.Skipf("no bundled weights: %v", err)
+		// Fatal, not Skip. These weights are go:embed-ed into the binary, so this error means
+		// the embedded JSON is missing or unparseable — a broken build, not an unsupported
+		// platform. Skipping would turn that into a green run with the test silently absent.
+		t.Fatalf("bundled weights are embedded in the binary and must parse: %v", err)
 	}
 	// The chip label in stageCards is a fixed table of contents entry and cannot vary with the
 	// checkpoint; it is the one place allowed to say 四个头 regardless.
@@ -818,7 +836,10 @@ func configVariants(t *testing.T, base *model.Weights) []configVariant {
 func TestEveryLegalConfigRendersEveryStage(t *testing.T) {
 	base, err := model.Bundled()
 	if err != nil {
-		t.Skipf("no bundled weights: %v", err)
+		// Fatal, not Skip. These weights are go:embed-ed into the binary, so this error means
+		// the embedded JSON is missing or unparseable — a broken build, not an unsupported
+		// platform. Skipping would turn that into a green run with the test silently absent.
+		t.Fatalf("bundled weights are embedded in the binary and must parse: %v", err)
 	}
 	// Two prompts, not four. The dimension being swept is the config, and prompt shape is already
 	// covered by TestEveryStageRendersAnyInput; what these two add is a multi-token ASCII string
@@ -904,7 +925,9 @@ func TestNoLessonBodyDescribesAnEmptyTraceAsASmallOne(t *testing.T) {
 func TestPromptTooWideForTheWindowIsNotReportedAsEmpty(t *testing.T) {
 	base, err := model.Bundled()
 	if err != nil {
-		t.Skip("no bundled weights")
+		// See the note on the other sites: the bundle is embedded, so a parse failure is a
+		// broken build.
+		t.Fatal("bundled weights are embedded in the binary and must parse")
 	}
 	withCtx := func(ctx int) *App {
 		w := *base

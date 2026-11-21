@@ -118,7 +118,9 @@ func TestEmptyPrompt(t *testing.T) {
 func TestBundledParity(t *testing.T) {
 	w, err := Bundled()
 	if err != nil {
-		t.Skipf("no bundled weights: %v", err)
+		// Fatal, not Skip: these weights are go:embed-ed, so this error means the embedded
+		// JSON is missing or unparseable — a broken build, not an unsupported platform.
+		t.Fatalf("bundled weights are embedded in the binary and must parse: %v", err)
 	}
 	if w.Reference == nil {
 		// The reference is recorded by the training run into the same weights.json that
@@ -363,7 +365,9 @@ func TestExpNegMatchesExp(t *testing.T) {
 func TestUnembedReproducesTheRecordedLogits(t *testing.T) {
 	w, err := Bundled()
 	if err != nil {
-		t.Skipf("no bundled weights: %v", err)
+		// Fatal, not Skip: these weights are go:embed-ed, so this error means the embedded
+		// JSON is missing or unparseable — a broken build, not an unsupported platform.
+		t.Fatalf("bundled weights are embedded in the binary and must parse: %v", err)
 	}
 	ids := make([]int, 0, len(w.Reference.Prompt))
 	for i := 0; i < len(w.Reference.Prompt); i++ {
@@ -392,7 +396,9 @@ func TestUnembedReproducesTheRecordedLogits(t *testing.T) {
 func TestUnembedDiffersPerPosition(t *testing.T) {
 	w, err := Bundled()
 	if err != nil {
-		t.Skipf("no bundled weights: %v", err)
+		// Fatal, not Skip: these weights are go:embed-ed, so this error means the embedded
+		// JSON is missing or unparseable — a broken build, not an unsupported platform.
+		t.Fatalf("bundled weights are embedded in the binary and must parse: %v", err)
 	}
 	ids := make([]int, 0, len(defaultTestPrompt))
 	for i := 0; i < len(defaultTestPrompt); i++ {
@@ -437,7 +443,7 @@ const defaultTestPrompt = "The transformer reads the tokens and"
 func TestForwardWrapsOutOfRangeIDsRatherThanFailing(t *testing.T) {
 	w, err := Bundled()
 	if err != nil {
-		t.Skip("no bundled weights")
+		t.Fatal("bundled weights are embedded in the binary and must parse")
 	}
 	for _, tc := range []struct{ in, want int }{
 		{256, 0}, {257, 1}, {999, 231}, {-1, 255},

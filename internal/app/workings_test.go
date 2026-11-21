@@ -4527,7 +4527,10 @@ func TestHeadProfilesAdviceNeverNamesTheCurrentLayer(t *testing.T) {
 func TestWeightDerivedProseFollowsTheLoadedConfig(t *testing.T) {
 	base, err := model.Bundled()
 	if err != nil {
-		t.Skipf("no bundled weights: %v", err)
+		// Fatal, not Skip. These weights are go:embed-ed into the binary, so this error means
+		// the embedded JSON is missing or unparseable — a broken build, not an unsupported
+		// platform. Skipping would turn that into a green run with the test silently absent.
+		t.Fatalf("bundled weights are embedded in the binary and must parse: %v", err)
 	}
 
 	// A copy with a different ctx. The positional table has one row of d_model per position,
@@ -4611,7 +4614,10 @@ func TestWeightDerivedProseFollowsTheLoadedConfig(t *testing.T) {
 func TestWeightDerivedTitlesFollowTheLoadedConfig(t *testing.T) {
 	base, err := model.Bundled()
 	if err != nil {
-		t.Skipf("no bundled weights: %v", err)
+		// Fatal, not Skip. These weights are go:embed-ed into the binary, so this error means
+		// the embedded JSON is missing or unparseable — a broken build, not an unsupported
+		// platform. Skipping would turn that into a green run with the test silently absent.
+		t.Fatalf("bundled weights are embedded in the binary and must parse: %v", err)
 	}
 	d := base.Config.DModel / 2
 	narrow := *base

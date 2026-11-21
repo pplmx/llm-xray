@@ -847,6 +847,12 @@
 
 ### Fixed
 
+- **15 处测试在「读不到内置权重」时选择跳过，而内置权重是 `go:embed` 的。** `model.Bundled()` 唯一可能失败的原因是嵌入的 JSON 缺失或损坏——那是**构建坏了**，不是平台不支持
+  - 用 `t.Skipf` 意味着：权重文件损坏时，15 个测试一起**静默消失**，整套跑还是绿的
+  - 全部改成 `t.Fatalf`。`internal/app` 里本来就有 `mustBundled()` 用 Fatal，只是 `robustness_test.go` / `workings_test.go` 没有用它——同一条失败路径，两个包两种处理
+  - 新增 `TestBundledWeightsFailureIsNeverSkipped`：扫描两个包的所有测试文件，禁止在提到 `bundled` / `weights` 的跳过附近出现 `t.Skip`。**它立刻抓到第 16 处**：`readme_test.go:732` 的 `t.Skipf("no weights file to measure")`——读的是 `weights.json` 文件本身，文件缺失同样是仓库不完整，一并改成 Fatal
+  - 破坏性验证：把一处改回 `t.Skipf("no bundled weights")` → `gpt_test.go:124 skips on a bundle failure`
+  - **又一次撤销事故**：验证时用 `git checkout -- internal/model/gpt_test.go` 撤销变异，把我刚做的 4 处替换全撤了。这是第 74、78 轮之后的第三次——**变异与修复在同一文件时，`git checkout` 会一起撤销**
 - **一个测试的第二段断言从未执行过，因为它的探针坐标过期了。** `TestStripCaretDoesNotOutliveThePointer` 先在 `(600, 408)` 悬停，再检查「读出的维度是否保留」；而实测嵌入条覆盖 **y=382..400**，探针落在条外，于是 `hovered < 0` 走了 `t.Skip`
   - 后果比「少测一条」严重：把「离开时清空 hover」这个改动做进去，测试会 **SKIP 而不是 FAIL**——`t.Skip` 把一个本该失败的回归变成了「未执行」
   - 探针改到 **390**（条带中点），`Skip` 改成 **`Fatal`** 并写明理由：探针不在条上是**测试坏了**，不是平台不支持

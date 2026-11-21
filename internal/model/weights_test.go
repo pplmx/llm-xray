@@ -191,7 +191,10 @@ func TestLoadErrorsSayWhatWasBeingLoaded(t *testing.T) {
 func TestWhichConfigFieldsWeightsCanVary(t *testing.T) {
 	base, err := Bundled()
 	if err != nil {
-		t.Skipf("no bundled weights: %v", err)
+		// Fatal, not Skip. These weights are go:embed-ed into the binary, so this error means
+		// the embedded JSON is missing or unparseable — a broken build, not an unsupported
+		// platform. Skipping would turn that into a green run with the test silently absent.
+		t.Fatalf("bundled weights are embedded in the binary and must parse: %v", err)
 	}
 
 	// vocab: rejected, and the message has to name both numbers so a reader knows what to fix.

@@ -5094,3 +5094,52 @@ func TestPrintedScoreMostlyReproducesByHand(t *testing.T) {
 			"comment above the format says to expect under 6%%", rate, failed, checked)
 	}
 }
+
+// TestFFNTopThreeDoNotDominateTheSum holds the premise behind showing a remainder.
+//
+// The FFN card prints the three largest terms and then an "其余 N 维" line. That design rests on a
+// measured fact: the top three do not make the output, so omitting the rest would misrepresent it.
+// The comment above computeFFN used to state that fact as "14–16% of the absolute mass", which was
+// the range an ad-hoc sample happened to land in; measured over every unit of both layers at four
+// positions, it is 5.8–16.6%.
+//
+// The assertion is about the ceiling, not the spread: if the top three ever carried most of the
+// mass, the remainder line would be decoration and the comment would be wrong in the direction
+// that matters. A floor assertion would pin the exact minimum, which moves with the prompt.
+func TestFFNTopThreeDoNotDominateTheSum(t *testing.T) {
+	a := newTestApp(t)
+	worst := 0.0
+	worstWhere := ""
+	checked := 0
+	for li := range a.Trace.Layers {
+		l := a.Trace.Layers[li]
+		for _, pos := range []int{0, 5, 20, 30} {
+			if pos >= len(a.Trace.Tokens) {
+				continue
+			}
+			for j := 0; j < a.W.Config.DFF; j++ {
+				p := computeFFN(l.Hidden[pos], a.W.Layers[li].W2, a.W.Config.DFF, a.W.Config.DModel, j)
+				if !p.OK || p.AbsTotal <= 0 {
+					continue
+				}
+				var top3 float64
+				for _, tm := range p.Top {
+					top3 += math.Abs(tm.V)
+				}
+				checked++
+				if share := top3 / p.AbsTotal; share > worst {
+					worst = share
+					worstWhere = fmt.Sprintf("layer %d, position %d, unit %d", li, pos, j)
+				}
+			}
+		}
+	}
+	if checked < 100 {
+		t.Fatalf("only %d units measured; the sweep is not reaching the FFN", checked)
+	}
+	if worst > 0.25 {
+		t.Fatalf("the three largest terms carry %.1f%% of the FFN sum at %s; the remainder line "+
+			"would be decoration, and the comment claiming they do not dominate is wrong",
+			100*worst, worstWhere)
+	}
+}

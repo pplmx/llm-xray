@@ -852,6 +852,13 @@
 
 ### Fixed
 
+- **「FFN 卡片必须显示余项」这条论证的数字说错了。** 注释写「measured, the top three carry only **14–16%** of the absolute mass」，而它是在论证「只列三项会让人以为它们就构成了输出」
+  - 实测（两层 × 四个位置 × 全部 384 个单元）：**层 0 是 5.8%–16.6%，层 1 是 5.8%–13.4%**。注释的下限比真实最小值高一倍多
+  - 这个偏差**削弱了论证本身**：top3 占比越低，余项越重要。写 14–16% 反而高估了集中度
+  - 注释改成 `5.8–16.6%`，并说明原来的范围是「作者恰好抽到的那几个」
+  - 新增 `TestFFNTopThreeDoNotDominateTheSum`：扫描两层 × 四位置 × 全部单元，要求 top3 占比**不超过 25%**。只断言上限不断言下限——下限随提示词浮动，上限才是「余项不是装饰」那条论证的关键
+  - 破坏性验证：把 `computeFFN` 的 `top` 从 3 改成 384（top3 变成全部）→ `carry 100.0% of the FFN sum`，测试失败
+  - **一处自己的错误**：`const top = 3` 在这个文件里出现**两次**（第 104、178 行，属于不同函数），我第一次改的是错的那个，测试照常通过，差点判为「守卫无效」。按老规矩先 `grep -n` 看清位置，才改对
 - **两处注释引用的耗时数字已经翻倍或缩小了 2.6 倍，而它们仍在以现在时表述。** 这类数字与第 92 轮的「六个」同族：写时正确，后来被无关改动拖走
   - `TestEveryLegalConfigRendersEveryStage`：注释说「four prompts made this test **22 seconds** of the **190-second** suite」，实测现在是 **33 秒 / 约 380 秒**
   - `TestEachStripWidthHasItsOwnCursor`：注释说「alone took **29 seconds** — 14% of a **206-second** suite」，实测现在是 **11 秒 / 约 380 秒**

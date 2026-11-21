@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"github.com/egoist/mygo/ui"
 	"math"
 	"os"
@@ -1324,5 +1325,60 @@ func TestLessonNamesIsUsedForTheStepRange(t *testing.T) {
 	if regexp.MustCompile(`flag\.\w+\("list"`).MatchString(body) {
 		t.Fatal("main.go grew a -list flag; if that is real, the comment on TestLessonNames " +
 			"should describe it and this test should check its output")
+	}
+}
+
+// TestStepRangeFiguresMatchTheLessonCount keeps "0-6" and "七个阶段" derived.
+//
+// The valid -step values appear in three places that a reader acts on: main.go's flag help
+// ("lesson to open on (0-6)"), and two sentences in the README. Each states the range as a
+// literal while the range itself is len(lessons)-1. Measured: changing the flag help to (0-5)
+// left every test green, and so did changing the README to "0-5，对应六个阶段" — a sentence that
+// contradicts the seven stages the app draws.
+//
+// The stage count is read from `lessons`, so the three figures move with it or this fails.
+func TestStepRangeFiguresMatchTheLessonCount(t *testing.T) {
+	last := len(lessons) - 1
+	if last < 1 {
+		t.Fatalf("only %d lessons; the range has no width to state", len(lessons))
+	}
+	wantRange := fmt.Sprintf("0-%d", last)
+
+	// The Chinese numeral for the count, since the README states it in words.
+	chinese := map[int]string{
+		5: "五", 6: "六", 7: "七", 8: "八", 9: "九", 10: "十",
+	}
+	count, ok := chinese[len(lessons)]
+	if !ok {
+		t.Fatalf("%d lessons; this test needs the Chinese numeral adding to its table", len(lessons))
+	}
+	wantPhrase := count + "个阶段"
+
+	mainSrc, err := os.ReadFile(filepath.Join("..", "..", "main.go"))
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	main := string(mainSrc)
+	if !strings.Contains(main, "("+wantRange+")") {
+		t.Fatalf("main.go's -step help does not state the range as (%s), which is what %d lessons "+
+			"allow", wantRange, len(lessons))
+	}
+
+	// Every place the README quotes the range, not just "somewhere in the file": the first
+	// version of this check used strings.Contains, and editing one of the two occurrences still
+	// passed because the other one supplied the match.
+	readme := readREADME(t)
+	ranges := regexp.MustCompile(`0-\d+`).FindAllString(readme, -1)
+	if len(ranges) == 0 {
+		t.Fatal("the README no longer states a -step range at all")
+	}
+	for _, r := range ranges {
+		if r != wantRange {
+			t.Errorf("the README states the -step range as %s in one place; with %d lessons it is %s",
+				r, len(lessons), wantRange)
+		}
+	}
+	if !strings.Contains(readme, wantPhrase) {
+		t.Errorf("the README does not describe the stages as %s", wantPhrase)
 	}
 }

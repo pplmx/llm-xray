@@ -847,6 +847,12 @@
 
 ### Fixed
 
+- **两处注释引用的耗时数字已经翻倍或缩小了 2.6 倍，而它们仍在以现在时表述。** 这类数字与第 92 轮的「六个」同族：写时正确，后来被无关改动拖走
+  - `TestEveryLegalConfigRendersEveryStage`：注释说「four prompts made this test **22 seconds** of the **190-second** suite」，实测现在是 **33 秒 / 约 380 秒**
+  - `TestEachStripWidthHasItsOwnCursor`：注释说「alone took **29 seconds** — 14% of a **206-second** suite」，实测现在是 **11 秒 / 约 380 秒**
+  - 两处都是**论证某个选择的历史理由**（选 2 个提示词、选 9 DIP 步长），不是当前的性能指标。所以处理方式是**保留理由、标注时效**：写成「当时的实测是…；现在重测是…」，而不是删掉或改成新数字（新数字同样会过期）
+  - 顺带确认 `justfile_test.go:176` 那条已经有自我说明（「This comment used to give…」），不需要改
+  - 实测数据来自一次全量 `-v` 跑：最慢的五个测试分别是 `TestEveryLegalConfigRendersEveryStage` 32.0s、`TestNoMalformedTextAcrossTheSweep` 28.1s、`TestPhoneCardTitlesKeepOneLine` 25.2s、`TestEveryStageCanBeScrolledToItsEnd` 23.3s、`TestProseDiffersAcrossPromptLengthsOnlyWhereDesigned` 16.7s
 - **15 处测试在「读不到内置权重」时选择跳过，而内置权重是 `go:embed` 的。** `model.Bundled()` 唯一可能失败的原因是嵌入的 JSON 缺失或损坏——那是**构建坏了**，不是平台不支持
   - 用 `t.Skipf` 意味着：权重文件损坏时，15 个测试一起**静默消失**，整套跑还是绿的
   - 全部改成 `t.Fatalf`。`internal/app` 里本来就有 `mustBundled()` 用 Fatal，只是 `robustness_test.go` / `workings_test.go` 没有用它——同一条失败路径，两个包两种处理

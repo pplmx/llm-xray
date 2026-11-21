@@ -844,7 +844,12 @@ func TestEveryLegalConfigRendersEveryStage(t *testing.T) {
 	// Two prompts, not four. The dimension being swept is the config, and prompt shape is already
 	// covered by TestEveryStageRendersAnyInput; what these two add is a multi-token ASCII string
 	// and a short multi-byte one, which are the extremes of token count and of bytes-per-token.
-	// Four prompts made this test 22 seconds of the 190-second suite for no extra config coverage.
+	//
+	// The measurement that drove the choice, as it stood then: four prompts made this test 22
+	// seconds of a 190-second suite. Both figures have roughly doubled since — measured again, this
+	// test is 33s and the package is about 380s — because the suite grew, not because this test
+	// got slower. The reason to keep the scope at two prompts is unchanged: the fourth prompt
+	// added no config coverage, only time.
 	prompts := []struct{ name, text string }{
 		{"default", "The transformer reads the tokens and"},
 		{"cjk", "注意力就是加权求和"},

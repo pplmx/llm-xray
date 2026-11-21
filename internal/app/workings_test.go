@@ -5047,3 +5047,50 @@ func TestPearsonCoversItsGuardBranches(t *testing.T) {
 		t.Fatalf("a perfectly inverted pair returned %v, want -1", got)
 	}
 }
+
+// TestPrintedScoreMostlyReproducesByHand holds the score line to the accuracy its comment claims.
+//
+// The card exists so a reader can check the arithmetic by hand: dot, then the scale at six
+// decimals, then the product at four. The comment above the format records that this closes for
+// most lines but not all — the score is a float32 product while the printed dot is rounded to four
+// decimals independently, so 5.4% of lines disagree in the last place.
+//
+// That figure was prose only. Measured now over every visible cell of the first 12 rows on the
+// default prompt: 4 of 78 (5.1%). The bound here is loose on purpose — the point is to catch a
+// format change that makes the line worse, not to pin the exact rate, which moves with the prompt.
+func TestPrintedScoreMostlyReproducesByHand(t *testing.T) {
+	re := regexp.MustCompile(`score = 点积 / √(\d+) = ([+-]?[\d.]+) × ([\d.]+) = ([+-]?[\d.]+)`)
+	checked, failed := 0, 0
+	for q := 0; q < 12; q++ {
+		for k := 0; k <= q; k++ {
+			a := newTestApp(t)
+			a.Step = 2
+			a.KeyQ, a.KeyK = q, k
+			tr := ui.NewTester(a.View, 1500, 2000)
+			tr.Frame()
+			for _, s := range tr.Texts() {
+				m := re.FindStringSubmatch(s)
+				if m == nil {
+					continue
+				}
+				dot, err1 := strconv.ParseFloat(m[2], 64)
+				scale, err2 := strconv.ParseFloat(m[3], 64)
+				shown, err3 := strconv.ParseFloat(m[4], 64)
+				if err1 != nil || err2 != nil || err3 != nil {
+					t.Fatalf("cannot read the printed numbers from %q", s)
+				}
+				checked++
+				if fmt.Sprintf("%.4f", dot*scale) != fmt.Sprintf("%.4f", shown) {
+					failed++
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no score line was rendered; this test is not reaching the card")
+	}
+	if rate := 100 * float64(failed) / float64(checked); rate > 8.0 {
+		t.Fatalf("%.1f%% of the printed score lines do not reproduce by hand (%d of %d); the "+
+			"comment above the format says to expect under 6%%", rate, failed, checked)
+	}
+}

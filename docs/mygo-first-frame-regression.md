@@ -8,12 +8,13 @@
 
 ## 复现
 
-`llm-xray` 的 `internal/app` 里，`BenchmarkFirstFrame` 是 `ui.Render(a.View, 1500, 940, 1)`（每次都是新窗口），`BenchmarkSteadyFrame` 是同一个 `ui.Tester` 反复 `Frame()`：
+`llm-xray` 的 `internal/app` 里，新窗口那一半是 `BenchmarkView`（`ui.Render(a.View, 1500, 940, 1)`，每次都是新窗口；本文早期版本称它 `BenchmarkFirstFrame`），同一窗口连续渲染那一半是 `BenchmarkSteadyFrame`：
 
 ```go
-func BenchmarkFirstFrame(b *testing.B) {
+func BenchmarkView(b *testing.B) {
 	a := newTestApp(b)
-	a.Step = 0
+	a.Step = 3
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ui.Render(a.View, 1500, 940, 1)
 	}

@@ -10488,3 +10488,21 @@ func TestContrastFiguresInCommentsMatchTheColours(t *testing.T) {
 		}
 	}
 }
+
+// BenchmarkSteadyFrame renders repeatedly in one window, which is the other half of the
+// comparison in docs/mygo-first-frame-regression.md: the first frame in a new window went from
+// 13ms to 50ms in MyGo v0.9.1, while the second frame onward stayed flat. Without this benchmark
+// that document's central claim cannot be reproduced — it names this function verbatim, and the
+// repository only had the new-window half (BenchmarkView).
+//
+// b.N renders happen in one Tester, so the glyph cache is already warm after the first.
+func BenchmarkSteadyFrame(b *testing.B) {
+	a := newTestApp(b)
+	a.Step = 0
+	tr := ui.NewTester(a.View, 1500, 940)
+	tr.Frame() // warm the text system: the first frame is what BenchmarkView measures
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tr.Frame()
+	}
+}

@@ -830,6 +830,15 @@
 
 ### Fixed
 
+- **上游报告里贴出的两个基准函数，仓库里只存在一个，另一个连名字都不对。** `docs/mygo-first-frame-regression.md` 给了完整代码，并说它们在 `internal/app` 里
+  - `BenchmarkFirstFrame` —— 仓库里实际的函数叫 `BenchmarkView`，函数体一模一样
+  - `BenchmarkSteadyFrame` —— **根本不存在**。仓库里没有任何基准复用同一个 `Tester`
+  - 后果：这份文档最有价值的那条结论是「**首帧 3.8×，稳态持平**」，而读者照文档只能复现「首帧」那一半，**无法验证「稳态持平」**
+  - 补上 `BenchmarkSteadyFrame`（同一 `Tester` 先预热一帧再计时），修正文档里的函数名并注记「本文早期版本称它 `BenchmarkFirstFrame`」
+  - 实测两个基准现在都能跑：`BenchmarkView` 59.9 ms/op 对 `BenchmarkSteadyFrame` 0.98 ms/op，与文档记录的 ~50 ms / ~0.96 ms 同一量级
+  - 新增 `TestRegressionDocNamesRealBenchmarks`：要求文档里**以 `func X(` 形式声明的**每个基准（以及 `-bench` 参数点名的那些）都在包内真实存在
+  - 破坏性验证两例：删掉 `BenchmarkSteadyFrame` → `names BenchmarkSteadyFrame, but no test file declares it`；把文档里的函数名改成不存在的 `BenchmarkGhostFrame` → 同样报出
+  - **一处自己的工具错误**：第一次「删除」用的脚本只找到函数起点、没有回溯到注释块，实际一行没删，测试通过让我一度以为守卫失效。按老规矩先 `grep -c` 确认变异真的落地（结果是 0 行被删、`grep -c` 仍是 1）
 - **热力图尺寸算式里的四个数没有名字，改任何一个都没有测试会响。** `chrome := a.SidebarW + a.InspectorW + 2 + 32 + 28 + 240`，注释在它上面写着同一个总数的 `302`
   - 实测：把 `32` 改成 `40`（矩阵因此少拿到 8 DIP），**364 秒全量测试全绿**，而注释里的 `302` 也不再是那四项之和
   - 把四项提成具名常量（`borderX` / `cardPadX` / `columnGap` / `secondCol`），新增 `TestMatrixChromeTotalMatchesTheComment`：从源码里读出注释引用的 `393 − 224 − 330 − 302`，再把四个常量的和与 `302` 比对

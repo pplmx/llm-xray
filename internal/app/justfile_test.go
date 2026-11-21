@@ -858,3 +858,67 @@ func TestOutputDirectoryMatchesMygoJson(t *testing.T) {
 			"it looks in the wrong directory", cfg.Out)
 	}
 }
+
+// TestRegressionDocNamesRealBenchmarks checks that the upstream report's reproduction steps work.
+//
+// docs/mygo-first-frame-regression.md is a report to a third party: it says how to reproduce the
+// measurement, and it quotes the benchmark bodies. It named BenchmarkFirstFrame and
+// BenchmarkSteadyFrame, neither of which existed — the repository had BenchmarkView, whose body is
+// the same, under a different name, and no steady-frame benchmark at all. Anyone following the
+// document to check the claim "首帧 3.8×，稳态持平" would have found half of it missing.
+//
+// Every Go identifier the document presents as a function has to exist in the package, and every
+// benchmark it names has to be one `go test -bench` would run.
+func TestRegressionDocNamesRealBenchmarks(t *testing.T) {
+	doc, err := os.ReadFile(filepath.Join("..", "..", "docs", "mygo-first-frame-regression.md"))
+	if err != nil {
+		t.Fatalf("read the regression doc: %v", err)
+	}
+	text := string(doc)
+
+	// Benchmarks the document declares or tells the reader to run — not every name it mentions.
+	// The document also records its own history ("本文早期版本称它 BenchmarkFirstFrame"), and a
+	// former name is not a broken instruction.
+	declared := regexp.MustCompile(`func (Benchmark[A-Za-z]+)\(`).FindAllStringSubmatch(text, -1)
+	if len(declared) == 0 {
+		t.Fatal("the document declares no benchmark; if it moved, update this test")
+	}
+	named := make([]string, 0, len(declared))
+	for _, m := range declared {
+		named = append(named, m[1])
+	}
+	// Plus any benchmark the prose says to run with -bench.
+	for _, m := range regexp.MustCompile(`-bench (Benchmark[A-Za-z]+)`).FindAllStringSubmatch(text, -1) {
+		named = append(named, m[1])
+	}
+
+	// What the package actually declares.
+	var sources []string
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		if !strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("read %s: %v", f, err)
+		}
+		sources = append(sources, string(b))
+	}
+	all := strings.Join(sources, "\n")
+
+	seen := map[string]bool{}
+	for _, name := range named {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		if !strings.Contains(all, "func "+name+"(") {
+			t.Errorf("the document names %s, but no test file declares it; a reader cannot "+
+				"reproduce the measurement it describes", name)
+		}
+	}
+}

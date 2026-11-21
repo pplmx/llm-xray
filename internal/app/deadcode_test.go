@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -266,5 +267,40 @@ func TestNoUnusedFunctionParameters(t *testing.T) {
 	if checked < 50 {
 		t.Fatalf("only %d functions with parameters were examined; the scan is not reaching the "+
 			"package", checked)
+	}
+}
+
+// TestNoStaleLineNumberReferences keeps comments from anchoring to line numbers.
+//
+// A comment said the undo crash "panicked in topbar at app.go:883". That was true when it was
+// written — the number came from the stack trace — but app.go:883 is now `if stages > len(digits)`,
+// and a reader who follows the anchor lands in unrelated code with no way to tell. A function name
+// survives refactors; a line number does not.
+//
+// The check allows the phrase "at the time" beside the number, which is how the surviving
+// reference reads now: it says what the stack said then, not where to look.
+func TestNoStaleLineNumberReferences(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pat := regexp.MustCompile(`\b\w+\.go:\d+\b`)
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, err := readFileString(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		for i, line := range strings.Split(src, "\n") {
+			if !strings.Contains(line, "//") {
+				continue
+			}
+			if pat.MatchString(line) && !strings.Contains(line, "at the time") {
+				t.Errorf("%s:%d anchors to a line number, which goes stale: %s", name, i+1,
+					strings.TrimSpace(line))
+			}
+		}
 	}
 }

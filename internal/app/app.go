@@ -1115,8 +1115,10 @@ func (a *App) promptButtons(c *ui.Context) {
 		// undoPrompt() clears a.undo, and this closure keeps running after it, so
 		// reading a.undo.what afterwards dereferenced a nil pointer and clicking
 		// 撤销 crashed the window. Measured: the button was rendered, the click
-		// panicked in topbar at app.go:883, and the whole app went down — from the
-		// control the README advertises on every stage.
+		// panicked inside promptButtons (the stack said app.go:883 at the time), and the whole
+		// app went down — from the control the README advertises on every stage. The line number
+		// is given as "at the time" on purpose: app.go:883 is now unrelated code, and a reader
+		// who follows it finds the wrong place.
 		what := a.undo.what
 		undoBtn := ui.Button(c, "撤销")
 		if undoBtn.Clicked() {

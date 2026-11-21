@@ -847,6 +847,12 @@
 
 ### Fixed
 
+- **一条注释把读者锚在一个已经改变含义的行号上。** 撤销按钮那段注释写「panicked in topbar at `app.go:883`」——数字来自当时的崩溃栈，是对的；但 `app.go:883` 现在是 `if stages > len(digits)`，跟着它找会落进无关代码
+  - 改成点名函数（`promptButtons`），并把行号标为「当时的栈」而不是「去哪找」：`the stack said app.go:883 at the time`
+  - 新增 `TestNoStaleLineNumberReferences`：扫生产代码的注释，拒绝裸的 `xxx.go:数字` 引用，除非同一行写明「at the time」
+  - 破坏性验证：加一条 `// See app.go:1234 for the caller.` → `widgets.go:671 anchors to a line number`
+  - **行号引用会随重构失效，函数名不会**——这条守卫把判断固化成规则，而不是指望下一个写注释的人记得
+- 顺带把 README 那张 17 行的「界面阶段 → 函数 → 写回」表整个核了一遍：19 个函数名全部真实存在，`addInto` / `copy` 的位置与第 2 行所写一致。唯一一处「疑点」是 `nextByteSkill` 出现在写回栏而它是类型——它在那一行说的是「卡片现算这个结构」，写类型名比写字段名准确，**判断后确认不是缺陷**
 - **README 第 1 步那张表写的调用链，两半都不对。** 它写 `tokenizer.go: Tokenize` → `Truncate`，而 `Tokenize` **在生产代码里零调用**，喂给 `Truncate` 的 id 来自 `app.promptIDs`；`Forward` 之后再用 `alignTokens` 补 `Rune` / `Start`，表里压根没提
   - 这和第 86、87 轮是同一族：`Tokenize` 是第三处「由测试保活」的函数，只被三个测试调用
   - 处理方式比前两轮更稳妥：**先把它的两条契约搬到真实路径**上。`TestForwardKeepsInvalidBytes` 验证无效字节不被展开成 U+FFFD 的三字节，`TestForwardStartIsRuneOffset` 验证同一 rune 的字节共享 rune 索引，`TestTokenizerRoundTrip` 改成走 `字符串 → 字节 id → Forward → Trace.Tokens → DecodeBytes`。三条都在 `Forward` 上通过后才删除 `Tokenize`

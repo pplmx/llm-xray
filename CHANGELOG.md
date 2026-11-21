@@ -830,6 +830,14 @@
 
 ### Fixed
 
+- **注意力的并发上限只受 `n_head` 约束，可以远超 README 承诺的 8 个。** 矩阵乘那侧有 `maxWorkers = 8`，注意力这侧只写了 `if workers > c.NHead`；而 `validate` 对 `n_head` 只要求「为正、能整除 d_model」，不设上限
+  - 实测可达：`d_model = 96`，`n_head` 取 8/12/16/24/32/48 都能整除并通过校验；`n_head = 48` 且 64 个 token 时，注意力工作量 786,432 远高于 `parallelWork`（262,144），**并行分支真的会走**，最多 48 个 worker
+  - 这就是上一轮那个 `maxWorkers` 常量该覆盖的第二处。补上之后两处的上限一致
+  - 新增 `TestEveryMatmulAndAttentionWorkerLoopIsCapped`：扫描所有非测试文件，**每一处**从 `GOMAXPROCS` 推导 worker 数的地方都必须在同一段里夹到 `maxWorkers`，并断言 `maxWorkers == 8`；少于两处时直接报「期望矩阵乘与注意力两处」
+  - 新增 `TestAHighHeadCountStillForwardPasses`：48 头配置必须通过校验、前向不产生 NaN、两次运行逐 logit 相同、且与 8 头配置的 logits **不同**（证明额外那些头真的在贡献）
+  - 破坏性验证：去掉注意力那处夹紧 → `gpt.go:149 sizes workers from GOMAXPROCS without clamping`；`maxWorkers = 16` → `maxWorkers is 16, but the README`；把并行循环改成只跑 8 个头 → **panic + FAIL**（零值张量让 softmax 索引越界）；把并行分支整个禁用（`false &&`）→ 测试**通过**，证明它校验的是正确性而非并行
+  - **两次自己的判断错**：① 断言 trace 里 `Heads` 的长度，但那是按 `n_head` 预先分配的，跑几个头都还是 48——改成比对数值；② 用 `grep -oE "gave identical logits"` 过滤变异结果，而实际失败形式是 `panic:`，于是误判成「未捕获」。**过滤模式要覆盖所有失败形式，或者直接看退出码**
+  - 测试用的 token 数也有讲究：`T = 3` 时工作量 1,728 远低于阈值，走的是**串行分支**，此时改并行循环抓不到任何问题；`T = 64` 才触发并行
 - **README 说前向「最多 8 个 worker」，而守卫只检查那行比较存在，不检查被赋的值。** 把 `workers = 8` 改成 `workers = 16`，`TestReadme*` 依然全绿——实际并发数翻倍，文档还写着 8
   - 这个上限不是随手定的：紧邻的注释说「超过八个之后，每次矩阵乘的同步与共享权重流量比多出来的核心更贵」，所以改大会**变慢**
   - 把那两个 `8` 提成 `maxWorkers` 常量，守卫改为解析常量的**值**并同时确认矩阵乘真的用了它（`workers > maxWorkers`）

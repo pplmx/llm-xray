@@ -150,6 +150,13 @@ func Forward(w *Weights, ids []int) *Trace {
 			if workers > c.NHead {
 				workers = c.NHead
 			}
+			// The same cap the matmul applies, and for the same reason. Without it this
+			// branch was bounded only by n_head, so a checkpoint with 48 heads would start 48
+			// goroutines per layer while the README promises "最多 8 个 worker" — reachable,
+			// since d_model 96 divided by n_head 48 passes validate.
+			if workers > maxWorkers {
+				workers = maxWorkers
+			}
 		}
 		if workers <= 1 {
 			for h := 0; h < c.NHead; h++ {

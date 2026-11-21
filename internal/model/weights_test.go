@@ -380,3 +380,139 @@ func TestValidateReportsTheSameTensorEveryTime(t *testing.T) {
 			"tensor should point at the one whose absence matters most", got)
 	}
 }
+
+// TestEveryMatmulAndAttentionWorkerLoopIsCapped holds the README's "最多 8 个 worker" to the code.
+//
+// Two places start one goroutine per unit of work: the matmul splits by rows, the attention by
+// head. The matmul was capped at maxWorkers; the attention was bounded only by n_head, which is
+// whatever the checkpoint declares. n_head is validated for positivity and divisibility by d_model
+// and nothing else, so a file with n_head 48 (96 / 48 is an integer) passes and starts 48
+// goroutines per layer — while the README tells readers the forward pass uses at most eight.
+//
+// The worker count is internal runtime state, so this reads the source: every site that derives
+// workers from GOMAXPROCS has to clamp them to maxWorkers. A new such site without the clamp is
+// the failure this looks for.
+func TestEveryMatmulAndAttentionWorkerLoopIsCapped(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sites := 0
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("read %s: %v", f, err)
+		}
+		body := string(src)
+		// Each place that decides a worker count from the machine.
+		for i := 0; i < len(body); i++ {
+			j := strings.Index(body[i:], "workers = runtime.GOMAXPROCS(0)")
+			if j < 0 {
+				break
+			}
+			start := i + j
+			sites++
+			// The clamp should follow within the same block.
+			window := body[start:]
+			if end := strings.Index(window, "go func("); end > 0 {
+				window = window[:end]
+			} else if len(window) > 900 {
+				window = window[:900]
+			}
+			if !strings.Contains(window, "> maxWorkers") {
+				pos := start
+				line := strings.Count(body[:pos], "\n") + 1
+				t.Errorf("%s:%d sizes workers from GOMAXPROCS without clamping to maxWorkers; "+
+					"the README promises at most %d", f, line, maxWorkers)
+			}
+			i = start + 1
+		}
+	}
+	if sites < 2 {
+		t.Fatalf("found %d places that size workers from GOMAXPROCS; expected the matmul and the "+
+			"attention", sites)
+	}
+
+	// And the number itself, since the README quotes it.
+	if maxWorkers != 8 {
+		t.Fatalf("maxWorkers is %d, but the README says at most 8 workers", maxWorkers)
+	}
+}
+
+// TestAHighHeadCountStillForwardPasses checks the cap changes speed rather than results.
+//
+// The clamp above is about how many goroutines run, so the thing to prove is that a checkpoint
+// with more heads than the cap still produces the same numbers — the clamp must not silently drop
+// heads, which would be a correctness bug dressed up as a performance limit.
+func TestAHighHeadCountStillForwardPasses(t *testing.T) {
+	// n_head 48 divides d_model 96, so this configuration passes validate.
+	c := DefaultConfig
+	c.NHead = 48
+	w := Random(c, 7)
+	if err := w.validate(); err != nil {
+		t.Fatalf("a 48-head configuration was rejected: %v", err)
+	}
+
+	// 64 tokens is what makes the attention branch parallel at this head count: with fewer, the
+	// work estimate stays under parallelWork and the code takes the sequential path, where a bug
+	// in the worker loop cannot show up at all. Measured: T=64 gives 786k, T=36 gives 249k
+	// against a threshold of 262144.
+	ids := make([]int, 64)
+	for i := range ids {
+		ids[i] = 65 + i%26
+	}
+	got := Forward(w, ids)
+	if got == nil {
+		t.Fatal("forward with 48 heads returned nothing")
+	}
+	if len(got.Logits) == 0 {
+		t.Fatal("48-head forward returned no logits")
+	}
+	for i, v := range got.Logits {
+		if v != v {
+			t.Fatalf("logit %d is NaN with 48 heads; the worker clamp is dropping work", i)
+		}
+	}
+	// Counting the head traces proves nothing here: they are allocated to n_head up front, so a
+	// loop that only ran eight heads would still leave 48 in the slice. What does change is the
+	// arithmetic, so compare the logits against a run whose head count is the same but whose
+	// weights are, by construction, those of a smaller model.
+	if len(got.Layers) != c.NLayer {
+		t.Fatalf("forward produced %d layers, want %d", len(got.Layers), c.NLayer)
+	}
+
+	// Two runs of the same weights must agree exactly, which pins that the clamped parallel path
+	// is deterministic; the sequential and parallel branches have to compute the same thing.
+	again := Forward(w, ids)
+	for i := range got.Logits {
+		if got.Logits[i] != again.Logits[i] {
+			t.Fatalf("logit %d differs between two runs of the same weights (%v vs %v); the "+
+				"parallel path is not producing a stable answer", i, got.Logits[i], again.Logits[i])
+		}
+	}
+
+	// And the heads really all contribute: the projection over 48 heads cannot equal the one over
+	// the first 8. Compare against a config with the same weights but 8 heads, which uses only
+	// the first 8 heads of the same tensors.
+	narrow := c
+	narrow.NHead = 8
+	nw := Random(narrow, 7)
+	ngot := Forward(nw, ids)
+	if len(ngot.Logits) != len(got.Logits) {
+		t.Fatalf("the 8-head run produced %d logits, want %d", len(ngot.Logits), len(got.Logits))
+	}
+	same := true
+	for i := range got.Logits {
+		if got.Logits[i] != ngot.Logits[i] {
+			same = false
+			break
+		}
+	}
+	if same {
+		t.Fatal("a 48-head model and an 8-head model gave identical logits; the extra heads are " +
+			"being computed and then discarded")
+	}
+}

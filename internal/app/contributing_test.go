@@ -833,3 +833,65 @@ func TestContributingPerStageFocusCountsMatchTheApp(t *testing.T) {
 		}
 	}
 }
+
+// TestGoVersionIsStatedInOnePlace checks that the toolchain version has one source.
+//
+// go.mod's `go` line is the source: every workflow reads it with `go-version-file: go.mod`, so CI
+// cannot disagree with it. The documents state the version separately — CONTRIBUTING names it
+// exactly, the README names it as a lower bound — and neither was checked against go.mod.
+//
+// Reading the surfaces statically rather than by editing go.mod: raising the version makes Go try
+// to download a toolchain (measured: "go: download go1.28.0 ... toolchain not available"), so a
+// mutation test cannot go that way without reaching the network.
+func TestGoVersionIsStatedInOnePlace(t *testing.T) {
+	root := filepath.Join("..", "..")
+	mod, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatalf("read go.mod: %v", err)
+	}
+	m := regexp.MustCompile(`(?m)^go (\d+\.\d+\.\d+)$`).FindStringSubmatch(string(mod))
+	if m == nil {
+		t.Fatal("go.mod's go line is not in the x.y.z form this test reads")
+	}
+	version := m[1]
+
+	// CONTRIBUTING states it exactly; a mismatch means someone bumped one and not the other.
+	b, err := os.ReadFile(filepath.Join(root, "CONTRIBUTING.md"))
+	if err != nil {
+		t.Fatalf("read CONTRIBUTING.md: %v", err)
+	}
+	contrib := string(b)
+	if !strings.Contains(contrib, "Go "+version) {
+		t.Fatalf("CONTRIBUTING does not state Go %s, which is what go.mod requires", version)
+	}
+
+	// The README states the same version as the toolchain it will pull, and a lower bound for
+	// what a reader needs installed.
+	readme := readREADME(t)
+	if !strings.Contains(readme, "go.mod 要求 "+version) {
+		t.Fatalf("the README does not name go.mod's requirement of Go %s", version)
+	}
+
+	// Every workflow has to read the version from go.mod rather than pinning its own.
+	workflows, err := filepath.Glob(filepath.Join(root, ".github", "workflows", "*.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workflows) == 0 {
+		t.Fatal("no workflow files found")
+	}
+	for _, wf := range workflows {
+		b, err := os.ReadFile(wf)
+		if err != nil {
+			t.Fatalf("read %s: %v", wf, err)
+		}
+		body := string(b)
+		if !strings.Contains(body, "go-version-file: go.mod") {
+			t.Errorf("%s does not read the Go version from go.mod; a pinned version there could "+
+				"drift from the one the module requires", filepath.Base(wf))
+		}
+		if regexp.MustCompile(`go-version:\s*['"]?\d`).MatchString(body) {
+			t.Errorf("%s pins a go-version inline instead of reading go.mod", filepath.Base(wf))
+		}
+	}
+}

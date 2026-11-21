@@ -6,6 +6,11 @@
 
 ### Added
 
+- **Go 版本号写在四处，没有任何测试把它们连起来。** `go.mod` 的 `go 1.27.3` 是唯一来源，四个 workflow 用 `go-version-file: go.mod` 读它，而 `CONTRIBUTING` 明写「Go 1.27.3+」、`README` 写「go.mod 要求 1.27.3」——这三处文字与 go.mod 之间原本没有机制
+  - 新增 `TestGoVersionIsStatedInOnePlace`：从 go.mod 解析版本，要求 CONTRIBUTING 与 README 都用它，并要求**每个 workflow 都从 go.mod 读版本**（禁止内联 `go-version:`）
+  - 破坏性验证三例：CONTRIBUTING 改成 1.26 → `CONTRIBUTING does not state Go 1.27.3`；README 改掉要求 → `does not name go.mod's requirement`；把某处 workflow 改成内联版本 → `pins a go-version inline`
+  - **验证手法上的一次调整**：本来想直接改 go.mod 的版本再跑测试，但**提高**版本会让 Go 尝试下载工具链（实测 `go: download go1.28.0 ... toolchain not available`），**降低**版本则要求 `go mod tidy` 改文件。版本号是静态声明，用源码级检查比动态修改更合适
+  - 顺带核了 `model` 包的数字常量：`geluN`、`expN` 的表粒度改小都会被 parity 测试抓到；`geluMax = 8`、`geluMin = -6` 改小**抓不到，但在容差内**——GELU(-6) 是 5.9e-9、GELU(-7) 是 9.0e-12，远低于 float32 精度，所以那不是缺陷
 - **禁用控件那个不透明度常量没有测试。** `const dimmed = 0.55` 注释写着「0.55 把标签带到约 2.5:1，读起来像『关着』但又不至于看不见」——而 MyGo 的 `Disabled` 只拿走指针与键盘、照常绘制，所以**这个透明度是唯一的视觉线索**
   - 实测：改成 `0.75`，**417 秒全量测试全绿**。那时禁用标签的对比度从约 2.4:1 升到 **3.3:1**，已经和正常文字难以区分——控件看起来可用、却对点击无反应
   - 新增 `TestDimmedControlsStayVisiblyOff`，断言的是**一个区间**而不是一个值：下限 1.8（再暗就「像消失」）、上限 3.0（再亮就「像可用」），外加「变暗后的对比度必须低于未变暗时」

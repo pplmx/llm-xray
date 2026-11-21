@@ -1349,3 +1349,86 @@ func TestReadmeTrainingStepsMatchesTheWeights(t *testing.T) {
 		t.Fatalf("no line renders the step count %q beside the loss", want)
 	}
 }
+
+// TestTrainScriptDefaultMatchesTheBundledWeights keeps the reproduction command honest.
+//
+// The README tells the reader to run `python3 tools/train.py` with no arguments and says it
+// reproduces the bundled weights. That only holds while the script's --steps default equals the
+// step count recorded in weights.json: measured, setting the default to 750 left every README and
+// card test green, and the reader would then train a checkpoint for 750 steps against a shipped
+// one trained for 600 — close enough to look right, different enough that the figures would move.
+//
+// The comparison is between the two non-Go sources and the embedded checkpoint, so all three have
+// to agree: the script's default, the JSON's steps, and (via the other test) the README's sentence.
+func TestTrainScriptDefaultMatchesTheBundledWeights(t *testing.T) {
+	py, err := os.ReadFile(filepath.Join("..", "..", "tools", "train.py"))
+	if err != nil {
+		t.Fatalf("read tools/train.py: %v", err)
+	}
+	re := regexp.MustCompile(`"--steps"[^)]*default=(\d+)`)
+	m := re.FindStringSubmatch(string(py))
+	if m == nil {
+		t.Fatal("tools/train.py no longer declares --steps with a default in the form this test " +
+			"reads; update the test with whatever it says now")
+	}
+	defaultSteps, err := strconv.Atoi(m[1])
+	if err != nil {
+		t.Fatalf("cannot read %q as a number: %v", m[1], err)
+	}
+
+	a := newTestApp(t)
+	if a.W.Steps != defaultSteps {
+		t.Fatalf("tools/train.py defaults to %d steps but the bundled weights record %d; the "+
+			"README tells the reader that running the script with no arguments reproduces them, "+
+			"which would no longer be true", defaultSteps, a.W.Steps)
+	}
+}
+
+// TestTrainScriptWritesWhereTheBundleReads keeps the reproduction command pointed at the file the
+// binary embeds.
+//
+// README's "python3 tools/train.py # 复现权重" promises that the script, run with no arguments,
+// regenerates the checkpoint the app loads. That depends on the script's --out default being
+// internal/model/weights.json, which is the file model.go embeds. Measured: changing the default
+// to build/weights.json left every README and card test green — a reader following the documented
+// command would then get a fresh checkpoint somewhere the binary never looks, and the shipped one
+// would stay exactly as it was while the instruction appeared to work.
+//
+// Both ends are read: the path comes out of the Python source and has to match what the package
+// actually embeds.
+func TestTrainScriptWritesWhereTheBundleReads(t *testing.T) {
+	py, err := os.ReadFile(filepath.Join("..", "..", "tools", "train.py"))
+	if err != nil {
+		t.Fatalf("read tools/train.py: %v", err)
+	}
+	re := regexp.MustCompile(`"--out"[^)]*default="([^"]+)"`)
+	m := re.FindStringSubmatch(string(py))
+	if m == nil {
+		t.Fatal("tools/train.py no longer declares --out with a default in the form this test " +
+			"reads; update the test with whatever it says now")
+	}
+	writesTo := filepath.ToSlash(m[1])
+
+	// Where the package embeds from. model.go carries the go:embed directive.
+	src, err := os.ReadFile(filepath.Join("..", "..", "internal", "model", "weights.go"))
+	if err != nil {
+		t.Fatalf("read internal/model/weights.go: %v", err)
+	}
+	embedRE := regexp.MustCompile(`//go:embed\s+(\S+)`)
+	em := embedRE.FindStringSubmatch(string(src))
+	if em == nil {
+		t.Fatal("internal/model/weights.go no longer has a go:embed directive for the weights")
+	}
+	embeds := filepath.ToSlash(filepath.Join("internal", "model", em[1]))
+
+	if writesTo != embeds {
+		t.Fatalf("tools/train.py writes to %q but the binary embeds %q; the README tells the "+
+			"reader that running the script with no arguments reproduces the bundled weights, "+
+			"and it would write somewhere the app never reads", writesTo, embeds)
+	}
+
+	// And the README names that same file, so the sentence and the script agree on both ends.
+	if !strings.Contains(readREADME(t), writesTo) {
+		t.Fatalf("the README does not name %q as where the weights come from", writesTo)
+	}
+}

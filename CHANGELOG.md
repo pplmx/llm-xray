@@ -6,6 +6,12 @@
 
 ### Added
 
+- **README 的复现命令「`python3 tools/train.py` 复现权重」依赖两个默认值，而它们都没有守卫。**
+  - `--steps` 默认 600 与 `weights.json` 的 `steps` 一致；改成 750 后所有 README 与卡片测试全绿——读者按文档跑会训出 750 步的权重，与仓库里那份不同
+  - `--out` 默认 `internal/model/weights.json` 正是二进制 embed 的那份；改成 `build/weights.json` 后同样全绿——**这比步数问题更严重**：命令会把权重写到二进制永远不看的地方，而仓库里那份原封不动，读者看到命令成功会以为复现了
+  - 新增两个守卫：`TestTrainScriptDefaultMatchesTheBundledWeights`（脚本默认步数 = checkpoint 记录的步数）、`TestTrainScriptWritesWhereTheBundleReads`（脚本写出路径 = `//go:embed` 读的那份 = README 里写的那个路径）
+  - 破坏性验证三例：`--steps` → 750 → `defaults to 750 steps but the bundled weights record 600`；`--out` → `build/` → `writes to "build/weights.json" but the binary embeds "internal/model/weights.json"`；改 embed 指令 → **编译期就失败**（`pattern other.json: no matching files found`），比测试更早
+  - **一处自己的错**：先按 `internal/model/model.go` 去找 embed 指令，实际它在 `weights.go`。测试报「no such file」才回头确认——又一次「先查清文件在哪，再写路径」
 - **README 写「训练 600 步」，而顶栏渲染的是 `w.Steps`，两者可以各说各的。** 把 `weights.json` 的 `steps` 改成 750，所有 README 与卡片测试全绿——界面会显示「训练 750 步 · loss 1.019」，上面那句话仍写 600
   - 新增 `TestReadmeTrainingStepsMatchesTheWeights`：从**二进制实际 embed 的那份 checkpoint** 读步数，要求 README 用同一个数，并要求顶栏**真的**把它渲染出来（否则这句话说的是读者看不见的元数据）
   - 破坏性验证两例：`steps = 750` → `the README does not say "750 步"`；README 改成 500 → `the README does not say "600 步"`

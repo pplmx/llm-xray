@@ -403,6 +403,14 @@ type layerDivergence struct {
 
 // computeLayerDivergence derives the total variation distance between layer
 // `layer` and layer `layer-1` for one row and head.
+// computeLayerDivergence compares layer N's attention row against layer N-1's with total
+// variation distance, so it needs a previous layer, matching head counts and a row inside both.
+//
+// The `layer < 0` check below is redundant: the next guard tests `layer < 1`, which covers every
+// negative value. Measured — deleting the first check alone changes no result and no test, across
+// a full run. It is kept because it states the invalid input at the point it arrives, before the
+// compound condition that also has to talk about slice length; the compound guard is what
+// enforces it.
 func computeLayerDivergence(layers []model.LayerTrace, layer, head, row int) layerDivergence {
 	if layer < 0 {
 		return layerDivergence{}

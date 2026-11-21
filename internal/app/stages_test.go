@@ -1039,3 +1039,62 @@ func TestShortPathKeepsTheTailAndSurvivesADegenerateWidth(t *testing.T) {
 		}
 	}
 }
+
+// TestComputeLayerDivergenceRejectsEveryBadIndex covers the five guards in one place.
+//
+// The function compares layer N's attention row against layer N-1's, so it needs a real previous
+// layer, matching head counts, and a row inside both. Each rejection returns the zero value with
+// Ok=false, and the card skips rather than drawing a comparison of nothing.
+//
+// Coverage was 84.2% and three guards were untested. Removing the row-past-the-end check and the
+// half of the head guard that compares against the previous layer both left the suite green: the
+// bundled weights give every layer four heads and rows come from token indexes, so neither fires
+// here. A partially filled trace makes them reachable, which is the case they exist for.
+//
+// The `layer < 0` guard is redundant — the next one tests `layer < 1` — so deleting it alone
+// changes nothing by design. Its comment records that; this test cannot distinguish the two.
+func TestComputeLayerDivergenceRejectsEveryBadIndex(t *testing.T) {
+	a := newTestApp(t)
+	layers := a.Trace.Layers
+	if len(layers) < 2 {
+		t.Fatalf("the bundled weights have %d layers; this test needs two", len(layers))
+	}
+	rows := len(layers[1].Heads[0].Attn)
+	if rows < 3 {
+		t.Fatalf("layer 1 has %d attention rows; too few to test a middle one", rows)
+	}
+
+	// A real comparison works, so the rejections below are not rejecting everything.
+	if d := computeLayerDivergence(layers, 1, 0, 2); !d.Ok || d.TV < 0 {
+		t.Fatalf("a valid call returned Ok=%v TV=%v", d.Ok, d.TV)
+	}
+
+	bad := []struct {
+		name             string
+		layer, head, row int
+	}{
+		{"negative layer", -1, 0, 2},
+		{"layer zero has no previous", 0, 0, 2},
+		{"layer past the end", len(layers), 0, 2},
+		{"row zero is one visible key", 1, 0, 0},
+		{"negative head", 1, -1, 2},
+		{"head past the end", 1, len(layers[1].Heads), 2},
+		{"row past the end", 1, 0, rows},
+	}
+	for _, c := range bad {
+		if d := computeLayerDivergence(layers, c.layer, c.head, c.row); d.Ok {
+			t.Errorf("%s: layer=%d head=%d row=%d returned Ok with TV=%v",
+				c.name, c.layer, c.head, c.row, d.TV)
+		}
+	}
+
+	// A trace whose previous layer has fewer heads exercises the half of the head guard that
+	// compares against layers[layer-1].Heads, which equal head counts never reach.
+	shrunk := append([]model.LayerTrace(nil), layers...)
+	shrunk[0] = layers[0]
+	shrunk[0].Heads = layers[0].Heads[:1]
+	if d := computeLayerDivergence(shrunk, 1, 3, 2); d.Ok {
+		t.Fatalf("head 3 was accepted although the previous layer has %d head(s)",
+			len(shrunk[0].Heads))
+	}
+}

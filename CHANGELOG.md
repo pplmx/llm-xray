@@ -6,6 +6,10 @@
 
 ### Added
 
+- **`computeLayerDivergence` 的五个守卫里有三个没有测试。** 逐个删掉跑全量：`row >= len(cur)` 与「head 与上一层头数比较」两处删掉后套件全绿——内置权重每层都是 4 个头、`row` 来自 token 索引，所以这两条在当前数据下不触发
+  - 新增 `TestComputeLayerDivergenceRejectsEveryBadIndex`：七种非法输入各一条，外加**构造一个上一层只有 1 个头的 trace** 去触发 head 守卫的第二半（头数相等时永远走不到）
+  - 第三个 `layer < 0` **删掉也确实没有变化，但原因是冗余**——紧随其后的 `layer < 1` 已经涵盖所有负值。按第 54 轮的标准补注释说明「它在入参到达处陈述非法条件，真正约束的是那条复合判断」，而不是硬造一个测试去区分两条等价判断
+  - 破坏性验证：`row >= len` → CAUGHT；`head` 第二半 → CAUGHT；`layer < 1` → CAUGHT；`layer < 0` → NOT CAUGHT（**这是设计如此，注释已写明**）
 - **`shortPath` 一条测试都没有，而删掉它的 `n <= 1` 分支后 361 秒全量测试全绿。** 它把权重文件路径缩到固定宽度显示在顶栏，实际传的宽度是 34，所以两个边界分支今天都走不到——但 `n = 0` 时去掉守卫会 **panic**（`slice bounds out of range [4:3]`），因为尾段从 `len(r)-(n-1)` 开始，`n < 1` 时越界
   - 新增 `TestShortPathKeepsTheTailAndSurvivesADegenerateWidth`：八条精确用例（含 `n = 0 / 1 / -3`）外加一条性质——结果不超过要求的宽度，且永远是合法 UTF-8
   - 破坏性验证三例：删掉 `n <= 1` 分支 → **panic**；改用字节切片 → `which is not valid UTF-8`；去掉前置省略号 → 报出实际返回值

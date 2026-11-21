@@ -139,6 +139,25 @@ func TestNoUnusedFunctionsInApp(t *testing.T) {
 			for i := off; i < off+len(fd.Name.Name) && i < len(blanked); i++ {
 				blanked[i] = ' '
 			}
+			// The receiver's type name too. `func (o orphan) m()` mentions the type, but
+			// that is part of the declaration, not a use: a type nobody ever constructs
+			// keeps its methods and is still dead. Measured, an orphan type with a method
+			// was accepted as used because of the receiver.
+			if fd.Recv != nil {
+				for _, recv := range fd.Recv.List {
+					ast.Inspect(recv.Type, func(n ast.Node) bool {
+						id, ok := n.(*ast.Ident)
+						if !ok {
+							return true
+						}
+						ro := fileFset.Position(id.Pos()).Offset
+						for i := ro; i < ro+len(id.Name) && i < len(blanked); i++ {
+							blanked[i] = ' '
+						}
+						return true
+					})
+				}
+			}
 		}
 		stripped = append(stripped, string(blanked))
 	}

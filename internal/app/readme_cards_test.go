@@ -969,3 +969,61 @@ func TestReadmeTiedParameterSavingMatchesTheConfig(t *testing.T) {
 			"total; the claim is about a saving, not the whole checkpoint", saved, total)
 	}
 }
+
+// TestCorpusSentenceCountMatchesTheTrainingScript keeps "61 句" derived from tools/train.py.
+//
+// The figure appears three times in live prose — twice in stages.go's rendered text and once in
+// docs/cards.md — and every one of them is a statement about the training corpus, which lives in
+// tools/train.py's CORPUS_SENTENCES. Nothing connected the two: measured, adding a 62nd sentence
+// to the script left every card and README test green, and the UI would then claim a corpus size
+// the script does not have.
+//
+// The count is read out of the Python source rather than duplicated here, so the sentence and the
+// script cannot disagree. Parsing a Python list literal with a regexp is enough because the list
+// is one quoted string per line; if it stops being that, this test says so rather than guessing.
+func TestCorpusSentenceCountMatchesTheTrainingScript(t *testing.T) {
+	py, err := os.ReadFile(filepath.Join("..", "..", "tools", "train.py"))
+	if err != nil {
+		t.Fatalf("read tools/train.py: %v", err)
+	}
+	src := string(py)
+	start := strings.Index(src, "CORPUS_SENTENCES = [")
+	if start < 0 {
+		t.Fatal("tools/train.py no longer defines CORPUS_SENTENCES; the corpus size in the UI " +
+			"has no source any more")
+	}
+	end := strings.Index(src[start:], "\n]")
+	if end < 0 {
+		t.Fatal("cannot find the end of CORPUS_SENTENCES in tools/train.py")
+	}
+	body := src[start : start+end]
+
+	// One sentence per line, each a quoted literal.
+	re := regexp.MustCompile(`(?m)^\s+['"]`)
+	count := len(re.FindAllString(body, -1))
+	if count < 5 {
+		t.Fatalf("parsed only %d sentences out of CORPUS_SENTENCES; the list's shape changed and "+
+			"this parser no longer reads it", count)
+	}
+
+	want := fmt.Sprintf("%d 句", count)
+	for _, doc := range []struct{ name, body string }{
+		{"docs/cards.md", mustReadFile(t, filepath.Join("..", "..", "docs", "cards.md"))},
+		{"internal/app/stages.go", mustReadFile(t, "stages.go")},
+	} {
+		if !strings.Contains(doc.body, want) {
+			t.Errorf("%s does not say %q, which is how many sentences tools/train.py's corpus has; "+
+				"the sentence about the corpus size has no other owner", doc.name, want)
+		}
+	}
+}
+
+// mustReadFile reads a file or fails the test.
+func mustReadFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(b)
+}

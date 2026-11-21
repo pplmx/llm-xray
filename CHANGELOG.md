@@ -6,6 +6,11 @@
 
 ### Added
 
+- **「61 句」写在三处，而这三处与它们的来源之间没有任何机制。** 这个数字指的是训练语料大小，语料本身在 `tools/train.py` 的 `CORPUS_SENTENCES` 里（实测确实是 61 条）
+  - 实测：往 `train.py` 里加**第 62 句**，所有卡片与 README 测试全绿——界面会继续声称一个脚本里并不存在的语料规模
+  - 新增 `TestCorpusSentenceCountMatchesTheTrainingScript`：从 Python 源码里数出条数（每行一个引号字面量），要求 `stages.go` 的两处与 `docs/cards.md` 的一处都用这个数。数出不足 5 条时直接报「列表形状变了、这个解析器读不了」，而不是猜一个值
+  - 破坏性验证三例：加第 62 句 → `does not say "62 句"`；改 `stages.go` 为 `60 句` → `internal/app/stages.go does not say`；改 `cards.md` → `docs/cards.md does not say`
+  - **这一类此前没被系统检查过**：前面几十轮查的是「文档 ↔ 代码常量」「文档 ↔ 实测值」，这是第一次查「UI 文案 ↔ 仓库里的非 Go 数据源」
 - **`computeLayerDivergence` 的五个守卫里有三个没有测试。** 逐个删掉跑全量：`row >= len(cur)` 与「head 与上一层头数比较」两处删掉后套件全绿——内置权重每层都是 4 个头、`row` 来自 token 索引，所以这两条在当前数据下不触发
   - 新增 `TestComputeLayerDivergenceRejectsEveryBadIndex`：七种非法输入各一条，外加**构造一个上一层只有 1 个头的 trace** 去触发 head 守卫的第二半（头数相等时永远走不到）
   - 第三个 `layer < 0` **删掉也确实没有变化，但原因是冗余**——紧随其后的 `layer < 1` 已经涵盖所有负值。按第 54 轮的标准补注释说明「它在入参到达处陈述非法条件，真正约束的是那条复合判断」，而不是硬造一个测试去区分两条等价判断

@@ -6,6 +6,12 @@
 
 ### Added
 
+- **禁用控件那个不透明度常量没有测试。** `const dimmed = 0.55` 注释写着「0.55 把标签带到约 2.5:1，读起来像『关着』但又不至于看不见」——而 MyGo 的 `Disabled` 只拿走指针与键盘、照常绘制，所以**这个透明度是唯一的视觉线索**
+  - 实测：改成 `0.75`，**417 秒全量测试全绿**。那时禁用标签的对比度从约 2.4:1 升到 **3.3:1**，已经和正常文字难以区分——控件看起来可用、却对点击无反应
+  - 新增 `TestDimmedControlsStayVisiblyOff`，断言的是**一个区间**而不是一个值：下限 1.8（再暗就「像消失」）、上限 3.0（再亮就「像可用」），外加「变暗后的对比度必须低于未变暗时」
+  - 破坏性验证四个方向：`0.75` / `0.90` / `0.95` 都报「too close to live text」，`0.20` 报「would read as missing as off」
+  - **一处算错再纠正**：我先按 `colMuted` 算得 3.03:1，与注释的 2.5 差距较大；查渲染代码才发现标签用的是 `colFaint`，按它算是 **2.38:1**，与注释相符。**先看代码用的是哪个变量，再算**
+- 顺带核了另外八个数字常量：`lnEps`、`activeThreshold`、`topN`、`causalTolerance`、`causalLeakMagnitude`、`causalReferenceTemperature`、`lensConfident`、`playStepInterval` 全部有测试引用，抽测其中三个（改值后分别让 `TestLNWorkingsAddUp`、`TestFFNInspectorReadsTheSelectedLayer` 等失败）确认是真守卫
 - **热力图尺寸算式旁边那三个常量，改了都没人管。** 上一轮只补了 `chrome` 那四个数，同一条注释里的 `stageChrome = 228`、`leaving = 160`、`maxCell = 20` 仍然没有测试
   - 逐个改掉跑全量：`228→240`、`160→180`、`20→25`，**三次都全绿**（我最初以为它们有守卫，是 grep 把英文单词 "leaving" 当成了常量名）
   - `stageChrome` 是可以直接对照布局验证的——注释说它是「窗口顶到第一个可滚动行的距离」，而阶段标题恰好画在 **y=227.5**（半像素舍入，常量取了整 228）。测试在三种窗口尺寸下核对这一点，容差 1 DIP

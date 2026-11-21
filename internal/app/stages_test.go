@@ -1251,3 +1251,42 @@ func TestMatrixSizingConstantsMatchTheLayout(t *testing.T) {
 		}
 	}
 }
+
+// TestDimmedControlsStayVisiblyOff pins the opacity that says "this control is off".
+//
+// MyGo's Disabled removes the pointer and the keyboard but paints the widget as usual, so the
+// dimming is the only visible cue — the comment above it says 0.55 takes the labels to about
+// 2.5:1, "which reads as off without hiding that the control is there". That number is the whole
+// point: too faint and the control looks missing, too bright and it looks live while ignoring
+// clicks. Measured, raising it to 0.75 left the suite green across a full run.
+//
+// The range asserted is deliberately wide on both sides — this pins a band, not a value. A
+// disabled label must be dimmer than the muted text around it and still brighter than the panel
+// behind it, which is what "off but present" means in numbers.
+func TestDimmedControlsStayVisiblyOff(t *testing.T) {
+	dim := func(c ui.Color) ui.Color { return c.Alpha(dimmed) }
+
+	for _, bg := range []struct {
+		name string
+		col  ui.Color
+	}{{"panel", colPanel}, {"column background", colBg}} {
+		label := over(dim(colFaint), bg.col) // the control's own label, drawn in colFaint
+		got := contrastRatio(label, bg.col)
+		if got < 1.8 {
+			t.Errorf("a dimmed label on the %s measures %.2f:1; it would read as missing rather "+
+				"than as off", bg.name, got)
+		}
+		if got > 3.0 {
+			t.Errorf("a dimmed label on the %s measures %.2f:1; that is close enough to live text "+
+				"that a reader cannot tell the control is disabled", bg.name, got)
+		}
+	}
+
+	// And it has to be dimmer than the same text undimmed, or the cue is not a cue.
+	bg := colPanel
+	plain := contrastRatio(colFaint, bg)
+	dimmedRatio := contrastRatio(over(dim(colFaint), bg), bg)
+	if dimmedRatio >= plain {
+		t.Fatalf("dimming raised the contrast from %.2f:1 to %.2f:1", plain, dimmedRatio)
+	}
+}

@@ -12,11 +12,6 @@ import (
 // fine as long as the overflow is reachable and obviously so. These record that
 // contract, because a layout change that buried a callout with no way to scroll
 // to it would still pass every content test.
-const (
-	// The callout on each stage that carries a number, by its opening phrase.
-	calloutPrefix = "「"
-)
-
 // TestEveryStageCanBeScrolledToItsEnd checks the scroll offset actually moves on
 // every stage and window size. Find returns layout coordinates that do not shift
 // with the scroll, so the offset is the honest measurement here.

@@ -25,7 +25,11 @@ func TestNoUnusedFunctionsInModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	declared := map[string]string{}
+	type decl struct {
+		file string
+		kind string // "()" for a function, "" for a constant or variable
+	}
+	declared := map[string]decl{}
 	stripped := make([]string, 0, len(files))
 
 	for _, name := range files {
@@ -64,6 +68,28 @@ func TestNoUnusedFunctionsInModel(t *testing.T) {
 		}
 
 		for _, d := range f.Decls {
+			// Package-level constants and variables. Unused ones are legal Go, so neither
+			// the compiler nor vet reports them, and a leftover tuning constant reads like a
+			// live parameter of the forward pass.
+			if gd, ok := d.(*ast.GenDecl); ok && (gd.Tok == token.CONST || gd.Tok == token.VAR) {
+				for _, spec := range gd.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok {
+						continue
+					}
+					for _, id := range vs.Names {
+						if id.IsExported() || id.Name == "_" {
+							continue
+						}
+						declared[id.Name] = decl{file: name}
+						off := fileFset.Position(id.Pos()).Offset
+						for i := off; i < off+len(id.Name) && i < len(out); i++ {
+							out[i] = ' '
+						}
+					}
+				}
+				continue
+			}
 			fd, ok := d.(*ast.FuncDecl)
 			if !ok || fd.Name == nil || fd.Name.IsExported() {
 				continue
@@ -73,7 +99,7 @@ func TestNoUnusedFunctionsInModel(t *testing.T) {
 				strings.HasPrefix(fd.Name.Name, "Example") {
 				continue // entry points, called by the testing package
 			}
-			declared[fd.Name.Name] = name
+			declared[fd.Name.Name] = decl{file: name, kind: "()"}
 			// Blank the declaration's own name, at the same length, so no offset moves.
 			off := fileFset.Position(fd.Name.Pos()).Offset
 			for i := off; i < off+len(fd.Name.Name) && i < len(out); i++ {
@@ -84,10 +110,10 @@ func TestNoUnusedFunctionsInModel(t *testing.T) {
 	}
 
 	joined := strings.Join(stripped, "\n")
-	for name, file := range declared {
+	for name, d := range declared {
 		if !hasIdent(joined, name) {
-			t.Errorf("%s declares %s(), which no file in the package refers to",
-				file, name)
+			t.Errorf("%s declares %s%s, which no file in the package refers to",
+				d.file, name, d.kind)
 		}
 	}
 }

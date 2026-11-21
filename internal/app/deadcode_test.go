@@ -28,8 +28,14 @@ func TestNoUnusedFunctionsInApp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// name -> file where it is declared, for unexported funcs and methods.
-	declared := map[string]string{}
+	// name -> file where it is declared, for unexported funcs, methods, constants and
+	// variables. The kind is kept so the failure message uses the right syntax: "foo()"
+	// is right for a function and wrong for a constant.
+	type decl struct {
+		file string
+		kind string // "()" for a function, "" for a constant or variable
+	}
+	declared := map[string]decl{}
 	// Source of every file, with each declaration's own name blanked out, so a
 	// name that appears only at its definition is not counted as a use.
 	stripped := make([]string, 0, len(files))
@@ -66,6 +72,30 @@ func TestNoUnusedFunctionsInApp(t *testing.T) {
 		}
 
 		for _, d := range f.Decls {
+			// Package-level constants and variables. The compiler does not report these —
+			// an unused package-level identifier is legal Go — so a leftover tuning
+			// constant survives `go build` and `go vet` and reads like a live parameter.
+			// Same treatment as a function: record it, blank its own name, and require some
+			// other file position to mention it.
+			if gd, ok := d.(*ast.GenDecl); ok && (gd.Tok == token.CONST || gd.Tok == token.VAR) {
+				for _, spec := range gd.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok {
+						continue
+					}
+					for _, id := range vs.Names {
+						if id.IsExported() || id.Name == "_" {
+							continue
+						}
+						declared[id.Name] = decl{file: name}
+						off := fileFset.Position(id.Pos()).Offset
+						for i := off; i < off+len(id.Name) && i < len(blanked); i++ {
+							blanked[i] = ' '
+						}
+					}
+				}
+				continue
+			}
 			fd, ok := d.(*ast.FuncDecl)
 			if !ok || fd.Name == nil || fd.Name.IsExported() {
 				continue
@@ -79,7 +109,7 @@ func TestNoUnusedFunctionsInApp(t *testing.T) {
 					continue
 				}
 			}
-			declared[fd.Name.Name] = name
+			declared[fd.Name.Name] = decl{file: name, kind: "()"}
 			// Blank the declaration's own name, so a name that appears only at its
 			// definition is not counted as a use. Same length, so no offset moves.
 			off := fileFset.Position(fd.Name.Pos()).Offset
@@ -91,12 +121,12 @@ func TestNoUnusedFunctionsInApp(t *testing.T) {
 	}
 
 	joined := strings.Join(stripped, "\n")
-	for name, file := range declared {
+	for name, d := range declared {
 		// Word-boundary search: the name followed by a character that cannot
 		// continue an identifier.
 		if !containsIdentifier(joined, name) {
-			t.Errorf("%s declares %s(), which no file in the package refers to",
-				file, name)
+			t.Errorf("%s declares %s%s, which no file in the package refers to",
+				d.file, name, d.kind)
 		}
 	}
 }

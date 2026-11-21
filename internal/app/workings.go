@@ -270,23 +270,6 @@ func runeAt(tr *model.Trace, runeIdx int) runeBytes {
 	return runeBytes{}
 }
 
-// utf8Prefix describes the fixed high bits of a UTF-8 lead and continuation
-// byte, which is what makes the encoding checkable by hand.
-func utf8Prefix(b byte) string {
-	switch {
-	case b < 0x80:
-		return "0"
-	case b&0xE0 == 0xC0:
-		return "110"
-	case b&0xF0 == 0xE0:
-		return "1110"
-	case b&0xF8 == 0xF0:
-		return "11110"
-	default:
-		return "10"
-	}
-}
-
 // utf8Payload returns the data bits a byte carries, after its length prefix.
 func utf8Payload(b byte) byte {
 	switch {

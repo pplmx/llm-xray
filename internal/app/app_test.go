@@ -2351,32 +2351,6 @@ func TestUTF8PayloadReassemblesTheCodepoint(t *testing.T) {
 	}
 }
 
-// TestUTF8PrefixMatchesTheEncoding checks the prefix the card prints beside each
-// byte: the high bits are fixed by the byte's length, which is the thing that
-// lets a reader spot a continuation byte at a glance.
-func TestUTF8PrefixMatchesTheEncoding(t *testing.T) {
-	cases := []struct {
-		r      rune
-		prefix []string
-	}{
-		{'a', []string{"0"}},
-		{'é', []string{"110", "10"}},
-		{'注', []string{"1110", "10", "10"}},
-		{'𝄞', []string{"11110", "10", "10", "10"}},
-	}
-	for _, c := range cases {
-		bs := []byte(string(c.r))
-		if len(bs) != len(c.prefix) {
-			t.Fatalf("%q: %d bytes, %d prefixes", c.r, len(bs), len(c.prefix))
-		}
-		for i, b := range bs {
-			if got := utf8Prefix(b); got != c.prefix[i] {
-				t.Fatalf("%q byte %d: prefix %q, want %q", c.r, i, got, c.prefix[i])
-			}
-		}
-	}
-}
-
 // TestChipGlyphShowsCharactersNotEscapes is the point of the change: a byte of
 // a multi-byte character shows that character, not the model's "\\xe6" escape.
 func TestChipGlyphShowsCharactersNotEscapes(t *testing.T) {

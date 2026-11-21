@@ -3186,7 +3186,10 @@ func (a *App) stageEmbeddingStructure(c *ui.Context) {
 		}
 		workingsLinesCopyable(c, []string{
 			adjacent,
-			fmt.Sprintf("随便两对 %d 组：平均余弦 %+.4f，标准差 %.4f", e.RandomPairs, e.RandomCos, e.SDRandom),
+			// "随便两个", matching the bar label and the caption; the count is a number of
+			// byte pairs, which "两对 %d 组" made read like two of something. Measured on this
+			// vocabulary the figure is 32640, the number of unordered pairs among 256 bytes.
+			fmt.Sprintf("随便两个（%d 对）：平均余弦 %+.4f，标准差 %.4f", e.RandomPairs, e.RandomCos, e.SDRandom),
 			fmt.Sprintf("元音之间的平均余弦 %s，元音与辅音之间 %s", cosText(e.VowelCos), cosText(e.ConsonantCos)),
 			fmt.Sprintf("最像的 20 对里，只有 %d 对两边都是可打印 ASCII", e.SimilarPrintableOf20),
 		})

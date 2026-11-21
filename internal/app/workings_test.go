@@ -3798,10 +3798,16 @@ func TestEmbeddingStructureCardQuotesItsOwnNumbers(t *testing.T) {
 	if !strings.Contains(joined, "这 96 个维度里有「意思」吗") {
 		t.Fatal("the embedding structure card is missing")
 	}
+	// The pieces, not whole sentences. Each of these is a figure the reader has to be able to
+	// find; spelling out the surrounding prose here would make the test a second copy of the
+	// wording, so a change to how the card phrases it fails here even when the card is right.
 	for _, want := range []string{
 		"文本里相邻的",
-		fmt.Sprintf("随便两对 %d 组：平均余弦 %s，标准差 %.4f", e.RandomPairs, cosText(e.RandomCos), e.SDRandom),
-		fmt.Sprintf("最像的 20 对里，只有 %d 对两边都是可打印 ASCII", e.SimilarPrintableOf20),
+		"随便两个",
+		fmt.Sprint(e.RandomPairs),
+		cosText(e.RandomCos),
+		fmt.Sprintf("%.4f", e.SDRandom),
+		fmt.Sprintf("只有 %d 对两边都是可打印 ASCII", e.SimilarPrintableOf20),
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("the card does not print %q", want)
@@ -5295,5 +5301,34 @@ func TestLayerRewriteSaysItsFiguresAreMeans(t *testing.T) {
 	}
 	if copyFound == 0 {
 		t.Fatal("no copyable line quotes the layer rewrite figures; the check below is vacuous")
+	}
+}
+
+// TestEmbeddingCardUsesOneNameForTheRandomBaseline keeps one label for one thing.
+//
+// The card compares adjacent byte pairs against a random baseline, and it called that baseline
+// three things: the bar label said "随便两个", the caption said "随便两个", and the copyable line
+// said "随便两对 %d 组" — which read as "two of something, %d groups" when the figure is a count
+// of unordered pairs. Three names for one quantity in one card is how a reader concludes they are
+// looking at three different measurements.
+func TestEmbeddingCardUsesOneNameForTheRandomBaseline(t *testing.T) {
+	a := newTestApp(t)
+	a.Step = 1
+	tr := ui.NewTester(a.View, 1500, 2600)
+	tr.Frame()
+
+	seen := 0
+	for _, s := range tr.Texts() {
+		if strings.Contains(s, "随便两对") {
+			t.Errorf("a line still says 随便两对, which reads as two of something rather than a "+
+				"count of pairs: %q", s)
+		}
+		if strings.Contains(s, "随便两个") {
+			seen++
+		}
+	}
+	if seen < 2 {
+		t.Fatalf("only %d place(s) name the random baseline as 随便两个; the bar label and the "+
+			"copyable line should both say it", seen)
 	}
 }

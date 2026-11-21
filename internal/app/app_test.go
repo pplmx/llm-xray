@@ -10400,3 +10400,32 @@ func TestClampPinnedCellCoversEveryBoundary(t *testing.T) {
 		}
 	})
 }
+
+// TestFaintTextClearsTheThresholdItWasChosenFor holds colFaint to the promise in its own comment.
+//
+// The comment above the constant says it "has to clear 4.5:1 on the panel colour" because it is
+// used for 10px labels, below the size at which WCAG allows a lower ratio. It measured 4.457:1 —
+// under the threshold, by an amount no eye can see, which is why the existing contrast test never
+// flagged it: that test checks colFaint against colBg (5.27:1) and against the sidebar's panel,
+// never against colPanel2, the darkest surface it is drawn on.
+//
+// The neighbouring comment about the rail's byte id had noticed the symptom — "colFaint measures
+// 3.58:1 and 3.69:1 there" — and fixed it by switching those two chips to colMuted rather than by
+// correcting the colour. Both are worth having, but the constant has to be right on its own.
+func TestFaintTextClearsTheThresholdItWasChosenFor(t *testing.T) {
+	// Every opaque surface colFaint is drawn on. A 10px label needs 4.5:1 on all of them.
+	surfaces := []struct {
+		name string
+		bg   ui.Color
+	}{
+		{"column background", colBg},
+		{"panel", colPanel},
+		{"panel2", colPanel2},
+	}
+	for _, s := range surfaces {
+		if got := contrastRatio(colFaint, s.bg); got < 4.5 {
+			t.Errorf("colFaint on the %s: %.3f:1, under the 4.5 its comment promises for 10px text",
+				s.name, got)
+		}
+	}
+}

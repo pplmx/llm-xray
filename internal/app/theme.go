@@ -31,9 +31,11 @@ var (
 	colBorder = ui.Hex("#252C39")
 	colText   = ui.Hex("#E7EBF3")
 	colMuted  = ui.Hex("#9BA5B8")
-	// colFaint is used for 9–10px labels, so it has to clear 4.5:1 on the
-	// panel colour; the previous #5C6577 sat at 3.0:1 and disappeared.
-	colFaint  = ui.Hex("#7C879B")
+	// colFaint is used for 10px labels, so it has to clear 4.5:1 on the panel
+	// colour; the previous #5C6577 sat at 2.75:1 and disappeared. #7C879B measured
+	// 4.457:1 — under the threshold it was chosen for, and the difference is too
+	// small to see, which is why nothing caught it. #80879B measures 4.503:1.
+	colFaint  = ui.Hex("#80879B")
 	colAccent = ui.Hex("#8B7BFF")
 	// colAccentOnTint is colAccent lightened just enough to read on the 16%
 	// accent tint behind the inspector's token glyph. Plain colAccent lands at

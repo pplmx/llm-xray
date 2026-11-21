@@ -6,9 +6,19 @@ package app
 // and return the terms, remainder, and total that a stage prints. They live
 // together, apart from app.go, because they are the one part of the interface
 // that has nothing to do with the interface — no ui.Context, no layout, no
-// state — and because there are now six of them with the same shape:
+// state.
 //
-//	compute<Thing> -> <thing>Parts -> <thing>Workings (in a stage file)
+// Three of them pair with a block that prints their result:
+//
+//	computeFFN   -> ffnParts   -> ffnWorkings      (stages.go)
+//	computeLN    -> lnParts    -> lnWorkings       (stages.go)
+//	computeScore -> scoreParts -> scoreWorkings    (stages.go)
+//
+// The rest return their struct to a card that formats it directly, and
+// residualWorkings takes a []residualStep rather than a Parts value. An earlier
+// version of this comment claimed six triples with an intermediate
+// "<thing>Parts" function between the two; measured, three match and there is no
+// such intermediate — the Parts type is what compute<Thing> returns.
 //
 // Reading them side by side makes the shared decisions visible: which terms to
 // show (largest by magnitude, never by signed value), what the remainder means

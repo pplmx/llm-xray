@@ -847,6 +847,13 @@
 
 ### Fixed
 
+- **`workings.go` 的包注释把自己描述错了：既数错，也画错。** 注释写「there are now **six** of them with the same shape」，并给出形状 `compute<Thing> -> <thing>Parts -> <thing>Workings`
+  - 实测：符合该形状的是 **3 个**（`computeFFN → ffnParts → ffnWorkings`、`computeLN → lnParts → lnWorkings`、`computeScore → scoreParts → scoreWorkings`）
+  - 而「中间那一层 `<thing>Parts`」**根本不存在**——`Parts` 是**类型**，是 `compute<Thing>` 的返回值，不是函数。`residualWorkings` 收的更是 `[]residualStep`，不属于这个形状
+  - 注释改成**逐个点名三个配对**，并说明其余函数把结构体直接交给卡片、`residualWorkings` 不收 Parts
+  - 新增 `TestWorkingsTriplesMatchThePackageComment`：要求三个 `compute<Thing>` 确实返回对应的 `Parts` 类型、对应的 `Workings` 函数存在**且参数里带该类型**，并禁止注释回到「N 个同样形状」的计数写法
+  - 破坏性验证三例：把注释改回「six」→ 报 `states a count of same-shape functions`；改 `computeLN` 的返回类型、改 `lnWorkings` 的参数类型 → **编译期**就失败（比测试更早）
+  - **一处自我纠正**：我第一版按 `compute<Thing> -> <thing>Parts -> <thing>Workings` 做字符串匹配，得到「0 个三元组」，差点得出「注释全错」的结论。实际是**命名不遵循字面模板**——`Parts` 是类型名不是函数名
 - **一条注释把读者锚在一个已经改变含义的行号上。** 撤销按钮那段注释写「panicked in topbar at `app.go:883`」——数字来自当时的崩溃栈，是对的；但 `app.go:883` 现在是 `if stages > len(digits)`，跟着它找会落进无关代码
   - 改成点名函数（`promptButtons`），并把行号标为「当时的栈」而不是「去哪找」：`the stack said app.go:883 at the time`
   - 新增 `TestNoStaleLineNumberReferences`：扫生产代码的注释，拒绝裸的 `xxx.go:数字` 引用，除非同一行写明「at the time」

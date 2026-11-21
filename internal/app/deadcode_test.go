@@ -304,3 +304,68 @@ func TestNoStaleLineNumberReferences(t *testing.T) {
 		}
 	}
 }
+
+// TestWorkingsTriplesMatchThePackageComment keeps workings.go's own description of itself true.
+//
+// The file's package comment said "there are now six of them with the same shape:
+// compute<Thing> -> <thing>Parts -> <thing>Workings". Measured: three functions follow that shape,
+// and there is no intermediate "<thing>Parts" function at all — Parts is a type, and it is what
+// compute<Thing> returns. A reader opening the file to learn the convention would have found
+// neither the count nor the shape.
+//
+// The pairs are checked directly, so the comment cannot describe a structure the package does not
+// have. It is a small test on purpose: the value is in the pointer to the right three functions.
+func TestWorkingsTriplesMatchThePackageComment(t *testing.T) {
+	all := map[string]string{}
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		src, err := readFileString(f)
+		if err != nil {
+			t.Fatalf("read %s: %v", f, err)
+		}
+		all[f] = src
+	}
+	joined := ""
+	for _, s := range all {
+		joined += s
+	}
+
+	// The three pairs the comment names, with the type each compute function returns.
+	pairs := []struct{ compute, parts, workings string }{
+		{"computeFFN", "ffnParts", "ffnWorkings"},
+		{"computeLN", "lnParts", "lnWorkings"},
+		{"computeScore", "scoreParts", "scoreWorkings"},
+	}
+	for _, p := range pairs {
+		sig := regexp.MustCompile(`(?m)^func ` + p.compute + `\([^)]*\) ` + p.parts + ` \{`)
+		if !sig.MatchString(joined) {
+			t.Errorf("%s no longer returns %s, which the package comment pairs with %s",
+				p.compute, p.parts, p.workings)
+		}
+		if !regexp.MustCompile(`(?m)^func ` + p.workings + `\(`).MatchString(joined) {
+			t.Errorf("%s no longer exists, though the package comment names it", p.workings)
+		}
+		// The workings function has to take the parts type, or the pairing is nominal only.
+		takes := regexp.MustCompile(`(?m)^func ` + p.workings + `\([^)]*\b` + p.parts + `\b`)
+		if !takes.MatchString(joined) {
+			t.Errorf("%s does not take a %s parameter, so it is not the printer for %s",
+				p.workings, p.parts, p.compute)
+		}
+	}
+
+	// And the comment must not go back to claiming a count it cannot support.
+	src, err := readFileString("workings.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if regexp.MustCompile(`\b(six|seven|eight|nine|ten)\b[^\n]*same shape`).MatchString(src) {
+		t.Error("the package comment states a count of same-shape functions; the three pairs " +
+			"are named individually now because a count is what was wrong before")
+	}
+}

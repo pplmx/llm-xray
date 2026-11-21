@@ -300,7 +300,9 @@ func TestNoStageNamesTheBundleConfigAtAnotherWidth(t *testing.T) {
 // The point is to separate "this number did not follow the config" from "this sentence happened
 // to differ somewhere else". A stale constant sits in prose that is otherwise fixed, so its
 // neighbourhood repeats verbatim in the other render even when the sentence as a whole does not.
-func windowUnchanged(a, b map[string]bool, s string, re *regexp.Regexp, pad int) bool {
+// Only the first map was ever read; the `a` it used to take was never touched, so a call read
+// as "does this window appear in either render's set" when it only ever checked one.
+func windowUnchanged(b map[string]bool, s string, re *regexp.Regexp, pad int) bool {
 	locs := re.FindAllStringIndex(s, -1)
 	if len(locs) == 0 {
 		return false
@@ -385,7 +387,7 @@ func TestNoStageNamesTheBundleFeedForwardWidth(t *testing.T) {
 		if !re.MatchString(s) || !strings.Contains(s, "单元") {
 			continue
 		}
-		if windowUnchanged(bundled, smaller, s, re, 24) {
+		if windowUnchanged(smaller, s, re, 24) {
 			stale = append(stale, s)
 		}
 	}
@@ -507,7 +509,7 @@ func TestNoStageNamesTheBundleContextAtAnotherWindow(t *testing.T) {
 		// So the unit is the neighbourhood of the number rather than the sentence: if the text
 		// on both sides of it is identical in both renders, that number is not following the
 		// config.
-		if windowUnchanged(bundled, smaller, s, re, 24) {
+		if windowUnchanged(smaller, s, re, 24) {
 			stale = append(stale, s)
 		}
 	}
@@ -587,7 +589,7 @@ func TestNoStageNamesTheBundleVocabulary(t *testing.T) {
 		// ranks that differ between the two renders, so it changes as a whole while the
 		// constant inside it rides along. Verified — the whole-string form of this check
 		// caught the heading but stayed green with "256 个字节" put back into the paragraph.
-		if windowUnchanged(bundled, smaller, s, re, 24) {
+		if windowUnchanged(smaller, s, re, 24) {
 			stale = append(stale, s)
 		}
 	}

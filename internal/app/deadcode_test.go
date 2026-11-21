@@ -203,3 +203,68 @@ func readFileString(name string) (string, error) {
 	}
 	return string(b), nil
 }
+
+// TestNoUnusedFunctionParameters finds parameters that a function never reads.
+//
+// Go allows them — a signature may be fixed by an interface, or a parameter may exist for
+// symmetry with a sibling — so neither the compiler nor vet says anything. The cost is real
+// though: `bars(c, rows, max, colGreen)` read as if it painted the bars green, and the parameter
+// was ignored entirely, the colour coming from each row. Six call sites passed a colour for a
+// parameter nothing read, and one of them passed colGreen while its second row was colAccent2.
+//
+// Parameters named `_` are the explicit way to say "deliberately unused" and are exempt. A
+// function whose body is empty is exempt too: it exists to satisfy a shape, not to compute.
+func TestNoUnusedFunctionParameters(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, name := range files {
+		src, err := readFileString(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, name, src, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			fd, ok := n.(*ast.FuncDecl)
+			if !ok || fd.Body == nil {
+				return true
+			}
+			params := map[string]bool{}
+			for _, field := range fd.Type.Params.List {
+				for _, id := range field.Names {
+					if id.Name != "_" {
+						params[id.Name] = true
+					}
+				}
+			}
+			if len(params) == 0 {
+				return true
+			}
+			checked++
+			used := map[string]bool{}
+			ast.Inspect(fd.Body, func(m ast.Node) bool {
+				if id, ok := m.(*ast.Ident); ok {
+					used[id.Name] = true
+				}
+				return true
+			})
+			for p := range params {
+				if !used[p] {
+					t.Errorf("%s: %s never reads its parameter %s; name it _ if that is deliberate",
+						fset.Position(fd.Pos()), fd.Name.Name, p)
+				}
+			}
+			return true
+		})
+	}
+	if checked < 50 {
+		t.Fatalf("only %d functions with parameters were examined; the scan is not reaching the "+
+			"package", checked)
+	}
+}

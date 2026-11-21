@@ -541,7 +541,7 @@ func (a *App) stagePosEncodingShape(c *ui.Context) {
 				Color:     colAccent2, LabelWidth: 104, ValueWidth: 56,
 				Tip: "同样的间隔，固定正弦编码"},
 		}
-		bars(c, rows, 1, colGreen)
+		bars(c, rows, 1)
 		workingsLinesCopyable(c, []string{
 			fmt.Sprintf("学出来的：cos(P[t],P[t+1]) = %+.3f，隔 %d 个位置是 %+.3f",
 				shape.AdjacentCos, shape.Gap, shape.DistantCos),
@@ -931,7 +931,7 @@ func (a *App) stageSoftmax(c *ui.Context) {
 				if len(rows) > 10 {
 					rows = topBars(rows, 10)
 				}
-				bars(c, rows, max, colAccent)
+				bars(c, rows, max)
 			})
 		})
 		// The heatmap says "rows sum to 1", and the natural misreading is that
@@ -1007,7 +1007,7 @@ func (a *App) stageSoftmax(c *ui.Context) {
 						hh.Head, hh.Norm, headsWord(len(l.Heads)), hh.Share),
 				})
 			}
-			bars(c, rows, float32(hc.SumNorm), colGreen)
+			bars(c, rows, float32(hc.SumNorm))
 			st := a.cancellation()
 			// The cross-row sentence needs rows to have been measured. With none, Lo is still
 			// its initial +Inf and the line read "本模型 0 行里 0 行都是这样（比值 +Inf–0.00）".
@@ -1229,7 +1229,7 @@ func (a *App) stageLogitLens(c *ui.Context) {
 					byteText(rung.Top), 100*rung.Probs[rung.Top], agreeNote(rung)),
 			})
 		}
-		bars(c, rows, maxP, colGreen)
+		bars(c, rows, maxP)
 		kv(c, "横条", fmt.Sprintf("每一层给最终答案 %q 的概率", byteText(lens.Final)))
 
 		// Scoped to this position and said so: the callout below quotes the
@@ -1784,7 +1784,7 @@ func (a *App) stageOutput(c *ui.Context) {
 				Index: rank,
 			})
 		}
-		bars(c, rows, maxP, colAccent2)
+		bars(c, rows, maxP)
 		// The top-1 probability and the training budget both come from the
 		// running model, so the callout stays true when the prompt, the
 		// temperature or the weights change.
@@ -2069,7 +2069,7 @@ func (a *App) inspectorScores(c *ui.Context, tr *model.Trace) {
 			})
 		}
 		rows = topAbsBars(rows, 5)
-		bars(c, rows, maxAbs, colWarm)
+		bars(c, rows, maxAbs)
 		kv(c, "可见 key", fmt.Sprintf("%d 个", i+1))
 		kvScale(c, tr.Config.DHead())
 	})
@@ -2151,7 +2151,7 @@ func (a *App) inspectorAttention(c *ui.Context, tr *model.Trace) {
 			})
 		}
 		ui.Text(c, "这一行在各头的熵（越小越专注）").FontSize(fontMicro).TextColor(colFaint)
-		bars(c, headRows, float32(math.Log(float64(i+1))), colGreen)
+		bars(c, headRows, float32(math.Log(float64(i+1))))
 	})
 }
 
@@ -2559,7 +2559,7 @@ func (a *App) stageHeadProfiles(c *ui.Context) {
 			})
 		}
 		ui.Text(c, "每行给「紧邻的前一个 token」的平均权重").FontSize(fontMicro).TextColor(colFaint)
-		bars(c, rows, float32(maxPrev), colGreen)
+		bars(c, rows, float32(maxPrev))
 		// The spread is the thing worth naming: four heads doing one thing, or four
 		// heads doing four things, are different pictures and the bars show which.
 		lo, hi := profiles[0].PrevShare, profiles[0].PrevShare
@@ -2698,7 +2698,7 @@ func (a *App) stageLayerRewrite(c *ui.Context) {
 					l.Layer, l.CosineInOut, l.FFNRatio, l.AttnRatio, l.InNorm, l.OutNorm),
 			})
 		}
-		bars(c, rows, float32(maxRatio), colGreen)
+		bars(c, rows, float32(maxRatio))
 		first, last := layers[0], layers[len(layers)-1]
 		workingsLinesCopyable(c, []string{
 			fmt.Sprintf("层 %d：进出余弦 %.3f，ΔFFN 是输入的 %.2f 倍（‖x‖ %.1f → %.1f）",
@@ -2815,7 +2815,7 @@ func (a *App) stageFFNConcentration(c *ui.Context) {
 		}
 		ui.Text(c, "凑够一半激活量需要多少个单元（越少越集中）").
 			FontSize(fontMicro).TextColor(colFaint)
-		bars(c, barsOut, float32(maxHalf), colGreen)
+		bars(c, barsOut, float32(maxHalf))
 		first, last := rows[0], rows[len(rows)-1]
 		workingsLinesCopyable(c, []string{
 			fmt.Sprintf("层 %d：%d 个单元凑够一半激活，每位置都开的有 %d 个，从不打开 %d 个",
@@ -2961,7 +2961,7 @@ func (a *App) stageHeadIndependence(c *ui.Context) {
 		ui.Text(c, fmt.Sprintf("两两之间最大的平均余弦（越接近 0，%s头越各说各的）",
 			headsWord(len(a.Trace.Layers[a.Layer].Heads)))).
 			FontSize(fontMicro).TextColor(colFaint)
-		bars(c, out, float32(maxPair), colGreen)
+		bars(c, out, float32(maxPair))
 		for _, r := range rows {
 			workingsLinesCopyable(c, []string{
 				fmt.Sprintf("层 %d：%s头的投影输出两两平均余弦在 %+.3f 到 %+.3f 之间",
@@ -3064,7 +3064,7 @@ func (a *App) stageFFNAnswerDirection(c *ui.Context) {
 		}
 		ui.Text(c, fmt.Sprintf("真实下一个字节的平均名次（越靠上越好，%d 个字节里随机是 ~%d 名）",
 			first.Vocab, first.Vocab/2)).FontSize(fontMicro).TextColor(colFaint)
-		bars(c, out, float32(maxRank), colGreen)
+		bars(c, out, float32(maxRank))
 		for _, m := range rows {
 			workingsLinesCopyable(c, []string{
 				fmt.Sprintf("层 %d：输入里真实字节平均第 %.1f 名（余弦 %+.3f），FFN 之后第 %.1f 名（余弦 %+.3f）",
@@ -3165,7 +3165,7 @@ func (a *App) stageEmbeddingStructure(c *ui.Context) {
 		}
 		ui.Text(c, "平均余弦（文本里相邻 vs 随便两个）").
 			FontSize(fontMicro).TextColor(colFaint)
-		bars(c, out, float32(maxAbs), colGreen)
+		bars(c, out, float32(maxAbs))
 		// Name the excluded pairs rather than quietly dropping them: a repeated byte has
 		// cosine 1.0 with itself, and leaving those in would make the comparison look like
 		// evidence of structure.

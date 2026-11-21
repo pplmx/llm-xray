@@ -661,7 +661,14 @@ func heatmapGrid(box, gutter ui.Rect) ui.Rect {
 }
 
 // bars draws a horizontal bar list, used for attention rows and probabilities.
-func bars(c *ui.Context, rows []barRow, max float32, color ui.Color) {
+// bars draws one row per barRow, each in its own colour.
+//
+// There used to be a `color ui.Color` parameter here that nothing read: every row already
+// carries Color, and the painter uses row.Color. Six call sites passed a colour anyway, so
+// reading a call told you the bars would be green while the bars were whatever each row said —
+// at one site the second row is colAccent2 while the call passes colGreen. A parameter that
+// cannot take effect is worse than none, because it invites exactly that reading.
+func bars(c *ui.Context, rows []barRow, max float32) {
 	for _, r := range rows {
 		row := r
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {

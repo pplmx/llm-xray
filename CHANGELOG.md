@@ -842,6 +842,11 @@
 
 ### Fixed
 
+- **`bars` 有一个从不生效的 `color` 参数，而六个调用点都往里传颜色。** 函数里没有任何地方读它——真正画的时候用的是每一行自己的 `row.Color`。于是读一个调用会以为「这组条是绿色」，实际颜色由数据决定
+  - 最明显的证据：`stages.go:544` 传的是 `colGreen`，而那一组里第二行的 `Color` 是 `colAccent2`——**传进去的颜色和画出来的颜色对不上，而代码里没有任何提示**
+  - 删掉参数与全部调用点（13 处，两种切片变量名）。新增 `TestNoUnusedFunctionParameters` 扫全部非测试文件，`_` 命名的参数豁免
+  - 这条守卫立刻抓到**第二处**：`robustness_test.go:303` 的 `windowUnchanged(a, b map[string]bool, ...)` 里 `a` 从未被读——只遍历了 `b`，而三个调用点都传两个 map，读起来像「在两边都查」。`a` 已删除
+  - **一处自己的工具失误**：第一版正则 `bars\(c, rows, ([^,]+), (col\w+)\)` 只匹配了切片名叫 `rows` 的调用，剩下 5 个用 `headRows` / `barsOut` / `out` 的漏掉了，`go vet` 报 `too many arguments`
 - **一个从不被实例化、只带方法的类型，检测器看不见。** 方法声明 `func (o orphanRecvOnly) m()` 里出现了类型名，而检测器把「名字出现在文件某处」当作被引用——**接收者位置是声明的一部分，不是使用**
   - 实测：`type orphanXyz struct{ x int }` 单独声明 → 报出；同一类型加一个方法 → **不报**，因为接收者把名字带进来了
   - 两个检测器在挖空函数自身名字之后，再用 `ast.Inspect` 挖空 `fd.Recv` 里的类型标识符（`fd.Recv` 对普通函数是 `nil`，需要判空——第一版漏了这个判断，直接 panic）

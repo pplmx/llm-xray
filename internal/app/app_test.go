@@ -6118,7 +6118,7 @@ func TestStripCaretDoesNotOutliveThePointer(t *testing.T) {
 		tr := ui.NewTester(a.View, 1500, 940)
 		tr.Frame()
 		if hoverThenLeave {
-			tr.Move(600, 408) // on the embedding strip
+			tr.Move(600, 390) // on the embedding strip (measured y=382..400 at 1500x940)
 			tr.Frame()
 		}
 		tr.Move(1490, 930) // away from every strip
@@ -6149,11 +6149,19 @@ func TestStripCaretDoesNotOutliveThePointer(t *testing.T) {
 	a.Step = 1
 	tr := ui.NewTester(a.View, 1500, 940)
 	tr.Frame()
-	tr.Move(600, 408)
+	tr.Move(600, 390)
 	tr.Frame()
 	hovered := a.HoverDimIn
 	if hovered < 0 {
-		t.Skip("the probe position is not on a strip in this layout")
+		// Not a skip. This test's whole second half is about what survives the pointer leaving,
+		// and a probe that never landed on the strip makes that half vacuous. It used to t.Skip
+		// here; measured, the probe sat at y=408 while the strip covers y=382..400, so the
+		// assertion below had never run — and when a change later cleared the hover on leave,
+		// the test skipped instead of failing. A stale probe is a broken test, not an untested
+		// platform.
+		t.Fatal("the probe at (600, 390) is not on the embedding strip; the strip covers " +
+			"y=382..400 at 1500x940 (measured), so either the layout moved or the probe did. " +
+			"Re-measure it rather than letting the assertion below go unrun")
 	}
 	tr.Move(1490, 930)
 	tr.Frame()

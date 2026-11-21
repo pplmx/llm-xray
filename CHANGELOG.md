@@ -847,6 +847,11 @@
 
 ### Fixed
 
+- **一个测试的第二段断言从未执行过，因为它的探针坐标过期了。** `TestStripCaretDoesNotOutliveThePointer` 先在 `(600, 408)` 悬停，再检查「读出的维度是否保留」；而实测嵌入条覆盖 **y=382..400**，探针落在条外，于是 `hovered < 0` 走了 `t.Skip`
+  - 后果比「少测一条」严重：把「离开时清空 hover」这个改动做进去，测试会 **SKIP 而不是 FAIL**——`t.Skip` 把一个本该失败的回归变成了「未执行」
+  - 探针改到 **390**（条带中点），`Skip` 改成 **`Fatal`** 并写明理由：探针不在条上是**测试坏了**，不是平台不支持
+  - 破坏性验证：加入「离开时清空」的改动后，测试从 `--- SKIP` 变成 `--- FAIL`，并报出 `the probe at (600, 390) is not on the embedding strip; the strip covers y=382..400`
+  - **过程中的两次测量错误**：① `tr.Move` 收 `float32`，我传了 `int`，`go vet` 直接报错；② 我用「从 y=300 逐格下扫」找条带，得到「382 以下全命中」的结论——那是错的，因为 `HoverDimIn` **一旦设置就粘滞**（这正是被测行为），扫描路径上的累积状态伪造了命中。改用**每行一个全新 app** 重测，才得到真实的 `382..400`
 - **`workings.go` 的包注释把自己描述错了：既数错，也画错。** 注释写「there are now **six** of them with the same shape」，并给出形状 `compute<Thing> -> <thing>Parts -> <thing>Workings`
   - 实测：符合该形状的是 **3 个**（`computeFFN → ffnParts → ffnWorkings`、`computeLN → lnParts → lnWorkings`、`computeScore → scoreParts → scoreWorkings`）
   - 而「中间那一层 `<thing>Parts`」**根本不存在**——`Parts` 是**类型**，是 `compute<Thing>` 的返回值，不是函数。`residualWorkings` 收的更是 `[]residualStep`，不属于这个形状

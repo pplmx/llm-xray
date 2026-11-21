@@ -5143,3 +5143,64 @@ func TestFFNTopThreeDoNotDominateTheSum(t *testing.T) {
 			100*worst, worstWhere)
 	}
 }
+
+// TestEmbedSumDisagreementRateMatchesTheNote keeps the embedding card's rounding note honest.
+//
+// The card prints "0.1322 + 0.7481 = 0.8802": two four-decimal terms and their four-decimal sum,
+// which do not always agree. The comment above it records that as 840 of 3456 dimensions (24.3%),
+// worst 0.0001, and the muted note tells the reader the last digit may be off by one or two.
+//
+// Both halves are checkable, so both are checked: the rate the comment states, and the promise the
+// reader is given. If the format changed to more decimals the rate would collapse and the note
+// would be warning about something that no longer happens.
+func TestEmbedSumDisagreementRateMatchesTheNote(t *testing.T) {
+	a := newTestApp(t)
+	bad, total := 0, 0
+	worst := 0.0
+	for i := range a.Trace.Input {
+		for d := range a.Trace.Input[i] {
+			e := float64(a.Trace.Embed[i][d])
+			p := float64(a.Trace.Pos[i][d])
+			x := float64(a.Trace.Input[i][d])
+			// What a reader does: add the two printed terms and compare with the printed sum.
+			// The rounding is done by the printer, not by math.Round: "%.4f" rounds halves to
+			// even, which differs from a naive round-half-up on exactly the boundary cases, and
+			// that changed the measured rate from 840 to 1815 when I got it wrong.
+			// The terms as the reader sees them, through the same formatter the card uses,
+			// so a change to that format shows up here rather than being invisible.
+			printedSum := readPrinted(t, signed(e)) + readPrinted(t, signed(p))
+			total++
+			// Compare at the precision the card shows, not the rounded values themselves:
+			// re-rounding the sum is a second rounding, and it moved this count from 840 to 1815.
+			if fmt.Sprintf("%.4f", printedSum) != fmt.Sprintf("%.4f", x) {
+				bad++
+				if diff := math.Abs(printedSum - x); diff > worst {
+					worst = diff
+				}
+			}
+		}
+	}
+	if total != 3456 {
+		t.Fatalf("%d dimensions measured; the default prompt has 3456 (36 tokens x 96)", total)
+	}
+	const documented = 840
+	if bad < documented*8/10 || bad > documented*12/10 {
+		t.Fatalf("%d of %d dimensions disagree (%d documented); update the comment above the note "+
+			"and this test together", bad, total, documented)
+	}
+	if worst > 0.0002 {
+		t.Fatalf("the worst disagreement is %.6f, but the note tells the reader the last digit may "+
+			"be off by one or two units of 0.0001", worst)
+	}
+}
+
+// readPrinted parses a number back out of the text the card prints, ignoring the parentheses
+// and sign decoration around it.
+func readPrinted(t *testing.T, s string) float64 {
+	t.Helper()
+	f, err := strconv.ParseFloat(strings.Trim(s, "()"), 64)
+	if err != nil {
+		t.Fatalf("cannot read %q as a number: %v", s, err)
+	}
+	return f
+}

@@ -1493,3 +1493,77 @@ func TestWeightsRecordTheTrainingSettings(t *testing.T) {
 		t.Errorf("weights record lr %v, the script defaults to %v", meta.LR, scriptLR)
 	}
 }
+
+// TestSecurityDocClaimsMatchTheCode holds SECURITY.md's promises to the imports.
+//
+// The document says the app "运行时不访问网络、不读用户目录之外的路径、不执行外部命令" — it
+// does not touch the network, does not read paths outside the user's, and does not run external
+// commands. Those are checkable statements about the code, and nothing was checking them: adding
+// an `import "net/http"` would leave every other test green while the security page started
+// promising something untrue.
+//
+// The one filesystem read is weights.Load, for the path the user passes with -weights, which the
+// document already describes as the user's own action. This test pins that it stays the only one.
+func TestSecurityDocClaimsMatchTheCode(t *testing.T) {
+	root := filepath.Join("..", "..")
+	doc, err := os.ReadFile(filepath.Join(root, "SECURITY.md"))
+	if err != nil {
+		t.Fatalf("read SECURITY.md: %v", err)
+	}
+	for _, claim := range []string{"不访问网络", "不执行外部命令"} {
+		if !strings.Contains(string(doc), claim) {
+			t.Fatalf("SECURITY.md no longer says %q; if the promise changed, update this test", claim)
+		}
+	}
+
+	// Every non-test Go file in the module.
+	var files []string
+	for _, dir := range []string{".", "internal", "internal/app", "internal/model"} {
+		matches, err := filepath.Glob(filepath.Join(root, dir, "*.go"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range matches {
+			if !strings.HasSuffix(m, "_test.go") {
+				files = append(files, m)
+			}
+		}
+	}
+	if len(files) < 5 {
+		t.Fatalf("found only %d source files; the glob is not reaching the module", len(files))
+	}
+
+	forbidden := []struct {
+		imp string
+		why string
+	}{
+		{"net/http", "the app must not reach the network"},
+		{"net", "the app must not reach the network"},
+		{"net/url", "the app must not reach the network"},
+		{"os/exec", "the app must not run external commands"},
+	}
+	for _, f := range files {
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("read %s: %v", f, err)
+		}
+		body := string(src)
+		for _, bad := range forbidden {
+			if regexp.MustCompile(`(?m)^\s*(?:[\w.]+\s+)?"` + regexp.QuoteMeta(bad.imp) + `"`).MatchString(body) {
+				rel, _ := filepath.Rel(root, f)
+				t.Errorf("%s imports %q, but SECURITY.md promises the code does not: %s",
+					filepath.ToSlash(rel), bad.imp, bad.why)
+			}
+		}
+	}
+
+	// The only file read has to be the user-supplied weights path.
+	weights, err := os.ReadFile(filepath.Join(root, "internal", "model", "weights.go"))
+	if err != nil {
+		t.Fatalf("read internal/model/weights.go: %v", err)
+	}
+	if strings.Count(string(weights), "os.ReadFile(") != 1 {
+		t.Errorf("weights.go reads files %d times; SECURITY.md describes one read, of the path the "+
+			"user passes with -weights", strings.Count(string(weights), "os.ReadFile("))
+	}
+}

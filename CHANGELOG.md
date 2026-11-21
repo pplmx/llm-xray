@@ -6,6 +6,12 @@
 
 ### Added
 
+- **`SECURITY.md` 里那几句技术承诺，没有任何测试在管。** 文档写「运行时不访问网络、不读用户目录之外的路径、不执行外部命令」——这三句都能直接对照 import 核实，目前也确实成立（全模块无 `net`*、无 `os/exec`，唯一的文件读取是 `weights.Load` 读用户 `-weights` 传入的那个路径）
+  - 但加一行 `import "net/http"` 就能让这份安全文档开始说谎，而其余测试全绿
+  - 新增 `TestSecurityDocClaimsMatchTheCode`：扫全部非测试 Go 文件禁止 `net` / `net/http` / `net/url` / `os/exec`，要求文档仍写着那两句承诺，并要求 `weights.go` 里 `os.ReadFile` 恰好出现**一次**（即唯一那处用户主动行为）
+  - 破坏性验证四例：`main.go` 加 `net/http` → 报 `main.go imports "net/http"`；`weights.go` 加 **并在代码里真的用到** `os/exec` → 报 `weights.go imports "os/exec"`；多一次 `os.ReadFile` → 报 `reads files 2 times`；删掉文档里的承诺 → `SECURITY.md no longer says`
+  - **一处值得记的观察**：只 `import` 而不使用的改动会**先被编译器拦下**（`imported and not used`），所以那不算有效变异——必须写成「导入并用它」才是真实的风险场景。第 41 轮也遇到过同类问题（变异没真正落地）
+- 顺带确认工作区里那个 17 MB 的 `app.test` 是本地测试产物，已被 `.gitignore` 的 `*.test` 覆盖且未被跟踪，不是我引入的，按规范不处理
 - **Go 版本号写在四处，没有任何测试把它们连起来。** `go.mod` 的 `go 1.27.3` 是唯一来源，四个 workflow 用 `go-version-file: go.mod` 读它，而 `CONTRIBUTING` 明写「Go 1.27.3+」、`README` 写「go.mod 要求 1.27.3」——这三处文字与 go.mod 之间原本没有机制
   - 新增 `TestGoVersionIsStatedInOnePlace`：从 go.mod 解析版本，要求 CONTRIBUTING 与 README 都用它，并要求**每个 workflow 都从 go.mod 读版本**（禁止内联 `go-version:`）
   - 破坏性验证三例：CONTRIBUTING 改成 1.26 → `CONTRIBUTING does not state Go 1.27.3`；README 改掉要求 → `does not name go.mod's requirement`；把某处 workflow 改成内联版本 → `pins a go-version inline`

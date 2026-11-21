@@ -272,7 +272,20 @@ def main():
         model,
         CONFIG,
         args.out,
-        {"corpus": "toy English sentences about transformers", "steps": args.steps, "loss": model.final_loss},
+        {
+            "corpus": "toy English sentences about transformers",
+            "steps": args.steps,
+            "loss": model.final_loss,
+            # Enough to re-run this command and get the same weights back. Without these the
+            # README's "复现权重" is a claim nothing can check: seed, repeats, batch size and
+            # learning rate all change the result, and none of them was recorded.
+            "training": {
+                "seed": args.seed,
+                "repeats": args.repeats,
+                "batch": args.batch,
+                "lr": args.lr,
+            },
+        },
     )
 
 

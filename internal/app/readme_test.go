@@ -1432,3 +1432,64 @@ func TestTrainScriptWritesWhereTheBundleReads(t *testing.T) {
 		t.Fatalf("the README does not name %q as where the weights come from", writesTo)
 	}
 }
+
+// TestWeightsRecordTheTrainingSettings keeps the checkpoint's provenance complete enough to
+// reproduce it.
+//
+// The README says `python3 tools/train.py` reproduces the bundled weights. That promise depends on
+// every default the script uses: the seed, how many times the corpus is repeated, the batch size
+// and the learning rate all change the result. None of the four was recorded in weights.json, so
+// the promise was unverifiable — a reader who changed one of them, or a maintainer who retuned it,
+// would get different weights and nothing would say so.
+//
+// The checkpoint now carries them, and this test requires the recorded set to match what the
+// script would use by default. If a default is retuned, both move together or this fails.
+func TestWeightsRecordTheTrainingSettings(t *testing.T) {
+	a := newTestApp(t)
+	meta := a.W.Training
+	if meta == nil {
+		t.Fatal("the bundled weights record no training settings; the README's reproduction " +
+			"command cannot be checked against them")
+	}
+
+	py, err := os.ReadFile(filepath.Join("..", "..", "tools", "train.py"))
+	if err != nil {
+		t.Fatalf("read tools/train.py: %v", err)
+	}
+	src := string(py)
+
+	// Each default, as written in the script.
+	defaults := map[string]string{
+		"--seed":    "int",
+		"--repeats": "int",
+		"--batch":   "int",
+		"--lr":      "float",
+	}
+	found := map[string]string{}
+	for flag := range defaults {
+		re := regexp.MustCompile(`"` + regexp.QuoteMeta(flag) + `"[^)]*default=([^),]+)`)
+		m := re.FindStringSubmatch(src)
+		if m == nil {
+			t.Fatalf("tools/train.py no longer declares %s with a default this test can read", flag)
+		}
+		found[flag] = strings.TrimSpace(m[1])
+	}
+
+	if got, want := strconv.Itoa(meta.Seed), found["--seed"]; got != want {
+		t.Errorf("weights record seed %s, the script defaults to %s", got, want)
+	}
+	if got, want := strconv.Itoa(meta.Repeats), found["--repeats"]; got != want {
+		t.Errorf("weights record repeats %s, the script defaults to %s", got, want)
+	}
+	if got, want := strconv.Itoa(meta.Batch), found["--batch"]; got != want {
+		t.Errorf("weights record batch %s, the script defaults to %s", got, want)
+	}
+	// The script writes the learning rate as a Python float literal (3e-3), so compare values.
+	scriptLR, err := strconv.ParseFloat(found["--lr"], 64)
+	if err != nil {
+		t.Fatalf("cannot read the --lr default %q: %v", found["--lr"], err)
+	}
+	if meta.LR != scriptLR {
+		t.Errorf("weights record lr %v, the script defaults to %v", meta.LR, scriptLR)
+	}
+}

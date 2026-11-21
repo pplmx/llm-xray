@@ -66,8 +66,21 @@ type Weights struct {
 	Corpus    string     `json:"corpus,omitempty"`
 	Steps     int        `json:"steps,omitempty"`
 	Loss      float32    `json:"loss,omitempty"`
+	// Training records the settings that produced this checkpoint, so the
+	// documented command can be re-run and checked against it. Seed, corpus
+	// repeats, batch size and learning rate all change the result; before they
+	// were recorded, "复现权重" was a claim nothing could verify.
+	Training *TrainingMeta `json:"training,omitempty"`
 
 	Source string `json:"-"` // where these weights came from, for the UI
+}
+
+// TrainingMeta is how tools/train.py was invoked for these weights.
+type TrainingMeta struct {
+	Seed    int     `json:"seed"`
+	Repeats int     `json:"repeats"`
+	Batch   int     `json:"batch"`
+	LR      float64 `json:"lr"`
 }
 
 // Reference is a forward pass recorded by the training script, so the Go

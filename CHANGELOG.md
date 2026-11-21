@@ -6,6 +6,12 @@
 
 ### Added
 
+- **README 的「复现权重」承诺依赖四个从未被记录的参数。** `--seed`、`--repeats`、`--batch`、`--lr` 都会改变训练结果，而 `weights.json` 只记了 `corpus` / `steps` / `loss`
+  - 后果不是「显示错误」而是「**无法验证**」：读者按文档跑命令，只要在自己环境里动过其中任何一个默认值（或维护者调整过），得到的权重与仓库里那份不同，而没有任何东西会说出来
+  - `--repeats` 的影响尤其大：`build_corpus` 把它当作语料重复次数，8 与 40 相差 **5 倍**（29,800 字符 vs 149,000）
+  - 修法：`weights.json` 新增 `training` 块记录这四项（`TrainingMeta` 结构体），`train.py` 相应导出；新增 `TestWeightsRecordTheTrainingSettings` 要求记录值与脚本默认值一致
+  - 破坏性验证四例，四个字段各改一次默认值，**全部被捕获**（`weights record seed 1337, the script defaults to 42` 等）
+  - **一次自己的验证脚本写错**：第一次用 `grep -oE "weights record [a-z]+ ..."` 过滤，模式与实际消息不符，四个变异都显示「NOT CAUGHT」，差点得出相反结论。加 `-v` 看清实际输出后重跑，四个全中——**这已经是第 8 次「验证脚本比被测代码更容易出错」**
 - **README 的复现命令「`python3 tools/train.py` 复现权重」依赖两个默认值，而它们都没有守卫。**
   - `--steps` 默认 600 与 `weights.json` 的 `steps` 一致；改成 750 后所有 README 与卡片测试全绿——读者按文档跑会训出 750 步的权重，与仓库里那份不同
   - `--out` 默认 `internal/model/weights.json` 正是二进制 embed 的那份；改成 `build/weights.json` 后同样全绿——**这比步数问题更严重**：命令会把权重写到二进制永远不看的地方，而仓库里那份原封不动，读者看到命令成功会以为复现了

@@ -544,9 +544,19 @@ func TestReadmeNumbersMatchTheCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(src), "workers > 8") {
-		t.Fatal("the README says the forward pass uses at most 8 workers; tensor.go no " +
-			"longer has that cap")
+	// The cap's value, not merely the shape of the comparison: changing `workers = 8` to
+	// `workers = 16` left the old check green while the README kept promising eight.
+	m := regexp.MustCompile(`const maxWorkers = (\d+)`).FindStringSubmatch(string(src))
+	if m == nil {
+		t.Fatal("tensor.go no longer declares maxWorkers, which is what the README's worker " +
+			"cap describes")
+	}
+	if !strings.Contains(string(src), "workers > maxWorkers") {
+		t.Fatal("tensor.go declares maxWorkers but the matmul no longer caps at it")
+	}
+	if m[1] != "8" {
+		t.Fatalf("maxWorkers is %s, but the README says the forward pass uses at most 8 workers",
+			m[1])
 	}
 	if !strings.Contains(doc, "最多 8 个 worker") {
 		t.Fatal("the README no longer states the worker cap")

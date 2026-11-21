@@ -25,6 +25,10 @@ func newMatrix(rows, cols int) [][]float32 {
 	return out
 }
 
+// maxWorkers caps how many goroutines one matmul may use. Above it the per-matmul
+// synchronization and the shared weight traffic outweigh the extra cores at this size.
+const maxWorkers = 8
+
 // parallelWork is the multiply-add count below which splitting a matmul
 // across goroutines costs more than it saves.
 const parallelWork = 1 << 18
@@ -54,10 +58,11 @@ func matMulRows(x [][]float32, w []float32, b []float32, outDim int) [][]float32
 		if max := rows / 4; workers > max { // keep at least one 4-row block each
 			workers = max
 		}
-		// Beyond eight workers the per-matmul synchronization and the shared
-		// weight traffic cost more than the extra cores save at this size.
-		if workers > 8 {
-			workers = 8
+		// Beyond maxWorkers the per-matmul synchronization and the shared weight traffic cost
+		// more than the extra cores save at this size. The README quotes this cap to readers
+		// as "最多 8 个 worker", so it is a named constant rather than two copies of a literal.
+		if workers > maxWorkers {
+			workers = maxWorkers
 		}
 	}
 	if workers <= 1 {

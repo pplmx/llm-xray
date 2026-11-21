@@ -830,6 +830,11 @@
 
 ### Fixed
 
+- **README 说前向「最多 8 个 worker」，而守卫只检查那行比较存在，不检查被赋的值。** 把 `workers = 8` 改成 `workers = 16`，`TestReadme*` 依然全绿——实际并发数翻倍，文档还写着 8
+  - 这个上限不是随手定的：紧邻的注释说「超过八个之后，每次矩阵乘的同步与共享权重流量比多出来的核心更贵」，所以改大会**变慢**
+  - 把那两个 `8` 提成 `maxWorkers` 常量，守卫改为解析常量的**值**并同时确认矩阵乘真的用了它（`workers > maxWorkers`）
+  - 破坏性验证两例：`maxWorkers = 16` → `maxWorkers is 16, but the README ...`；把上限从矩阵乘里删掉 → `no longer caps at it`
+- 顺带排查了另外五处「用字符串搜索源码」的守卫，逐个做变异确认它们真的有效：`TestMaskedCellsAreNeverPainted`（把填充挪到第二个全行循环 → 报出；只放宽循环上界 → 也报出）、`TestScaleReadoutComesFromOneHelper`（把图例行复制一份 → `the legend line appears 2 times`）。**这一轮没有发现别的问题，如实记录**
 - **「app 包没有并发」这条判断靠字符串搜索，而它漏掉了最常见的写法。** CI 只对 `internal/model` 跑 `-race`，理由写在注释里：app 包单线程，且 race 下一帧要 24ms 而不是 0.8ms。`TestConcurrencyLivesOnlyInModel` 负责守住这个前提，但它只搜 `go func(` 与 `sync.WaitGroup`
   - 实测：往 `internal/app` 里加一个 `go a.backgroundWork()`，**测试照常通过**——裸 `go` 语句两种模式都不匹配。而这个测试一旦失灵，CI 跳过 app 的 race 就变成真正的漏洞
   - 改成用 **Go 语法树**判断：`ast.GoStmt`（任何 go 语句）、`ast.SendStmt`（channel 发送）、以及 `sync` / `sync/atomic` 的 import

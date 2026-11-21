@@ -6,6 +6,11 @@
 
 ### Added
 
+- **`shortPath` 一条测试都没有，而删掉它的 `n <= 1` 分支后 361 秒全量测试全绿。** 它把权重文件路径缩到固定宽度显示在顶栏，实际传的宽度是 34，所以两个边界分支今天都走不到——但 `n = 0` 时去掉守卫会 **panic**（`slice bounds out of range [4:3]`），因为尾段从 `len(r)-(n-1)` 开始，`n < 1` 时越界
+  - 新增 `TestShortPathKeepsTheTailAndSurvivesADegenerateWidth`：八条精确用例（含 `n = 0 / 1 / -3`）外加一条性质——结果不超过要求的宽度，且永远是合法 UTF-8
+  - 破坏性验证三例：删掉 `n <= 1` 分支 → **panic**；改用字节切片 → `which is not valid UTF-8`；去掉前置省略号 → 报出实际返回值
+  - **第二条变异揭示的是一个真实写法风险**：把 `[]rune(p)` 换成 `p`，以及 `"…" + string(...)` 误写成 `string(...)`，两者都是「看起来等价、实际不等价」的改动。前者在中文路径上切坏字符，后者丢掉省略号
+  - 覆盖率 **96.5% → 96.6%**，`shortPath` 到 **100%**
 - **`computeAllFFNConcentration` 里「跳过测不出的层」那条 `continue` 没人管。** 删掉它，363 秒全量测试全绿——内置 trace 每一层的 `Hidden` 行都齐全，所以 `OK` 永远是 true
   - 那个状态**确实可达**：把某一层的 `Hidden` 清空，`computeFFNConcentration` 就返回 `OK=false`。新增测试构造这个状态，并要求聚合结果**恰好少一条**（不是「变少」——丢掉错误的层也是变少，所以还要断言活下来的是另一层、索引没串）
   - 破坏性验证：去掉 `continue` → `emptying one layer's Hidden gave 2 entries, want 1`；把 `c.Layer = li` 改成错误的索引 → `still contains layer 0`

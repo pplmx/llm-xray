@@ -992,3 +992,50 @@ func TestMeanFutureShareAnswersWithoutEnoughTokens(t *testing.T) {
 		t.Fatalf("the future share is %v, outside [0, 1]", share)
 	}
 }
+
+// TestShortPathKeepsTheTailAndSurvivesADegenerateWidth pins the weights line's path shortening.
+//
+// shortPath is drawn beside the model's source path in the top bar. It keeps the end of the path
+// — the filename is the informative part — and marks the cut with an ellipsis. It had no test at
+// all: removing the `n <= 1` branch left the whole suite green across a 361s run while
+// shortPath("abc", 0) panics with "slice bounds out of range [4:3]", because the tail slice starts
+// at len(r)-(n-1), which is past the end for n < 1.
+//
+// The width this app actually passes is 34, so neither branch runs today. Both are cheap to state,
+// and the CJK case matters because a byte-slice version would cut a character in half.
+func TestShortPathKeepsTheTailAndSurvivesADegenerateWidth(t *testing.T) {
+	cases := []struct {
+		name string
+		p    string
+		n    int
+		want string
+	}{
+		{"fits", "/home/user/weights.json", 34, "/home/user/weights.json"},
+		{"exactly n", "abcdef", 6, "abcdef"},
+		{"keeps the tail", "/a/very/long/path/to/weights.json", 10, "…ghts.json"},
+		{"n of two keeps one char", "abcdef", 2, "…f"},
+		{"n of one is only the marker", "abcdef", 1, "…"},
+		{"n of zero is only the marker", "abcdef", 0, "…"},
+		{"negative n is only the marker", "abcdef", -3, "…"},
+		{"empty stays empty", "", 5, ""},
+	}
+	for _, c := range cases {
+		if got := shortPath(c.p, c.n); got != c.want {
+			t.Errorf("%s: shortPath(%q, %d) = %q, want %q", c.name, c.p, c.n, got, c.want)
+		}
+	}
+
+	// The property: the result never has more runes than n, except when the whole path was short
+	// enough to return unchanged. A byte-slice version would violate this on any multi-byte path.
+	for _, p := range []string{"日本語のとても長いパス名.json", "a注🙂b/路径/文件.json"} {
+		for n := 2; n <= len([]rune(p)); n++ {
+			got := shortPath(p, n)
+			if len([]rune(got)) > n {
+				t.Fatalf("shortPath(%q, %d) = %q, longer than the width asked for", p, n, got)
+			}
+			if !utf8.ValidString(got) {
+				t.Fatalf("shortPath(%q, %d) = %q, which is not valid UTF-8", p, n, got)
+			}
+		}
+	}
+}

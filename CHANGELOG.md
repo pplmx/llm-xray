@@ -842,6 +842,12 @@
 
 ### Fixed
 
+- **死代码检测把字符串字面量里的名字当成引用，因而放过真正的孤儿。** 它已经会挖空注释（用 AST 区间，注释里还记着当年用字节扫描器误判 `"/*"`、丢掉八个函数声明的教训），但**没有挖空字符串**
+  - 实测：加一个 `func orphanNamedInString() int`，再写一句 `const mentionsIt = "orphanNamedInString is mentioned here"`——检测器**不报**，因为名字在字符串里出现过
+  - 这正是它自己注释里写的取舍方向反了：文本匹配是为了「宁可假阴性、不要假阳性」，但「字符串里提到」属于**假阴性**，会把真孤儿藏起来
+  - 两个检测器都用 `ast.BasicLit` + `token.STRING` 挖空引号之间的内容，与挖空注释共用同一套 AST 区间
+  - 修复后两个包都直接通过，说明**现有代码里没有这类被藏起来的孤儿**；构造的用例则全部报出
+  - **一次自己的工具失误**：我先写了个 Python 脚本「找只在字符串里被引用的声明」，第一版因为没处理反引号原始字符串而误报 140 多个（连 `absFloat`、`histogram` 这些明显有调用的都列出来），第二版仍然误报 22 个（`absInt`、`rowEntropy` 实际都在被调用）。**用一个不可靠的脚本去找缺陷，得到的是一份需要再核查的名单**；改用 Go 的 AST 才准确
 - **死代码检测的第二个盲区：包级 `type` 声明。** 上一轮补了 `const` / `var`，但 `type` 同样躲得过编译器——往 `internal/app` 加一个从未被引用的 `type orphanType struct{ x int }`，检测器照常通过
   - 两个检测器都扩展到 `ast.TypeSpec`，与 `ValueSpec` 共用同一段挖空与查找逻辑
   - 判定边界验证：`internal/app` 里从未被引用的 `type orphanType` → 报出；只在本文件使用的 `type localType` → **不误报**；**导出**的 `ExportedOrphan` → **正确豁免**（导出符号是 API，包内无人用不算残留）

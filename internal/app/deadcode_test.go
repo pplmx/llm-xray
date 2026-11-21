@@ -70,6 +70,25 @@ func TestNoUnusedFunctionsInApp(t *testing.T) {
 				}
 			}
 		}
+		// String literals too. A name that appears only inside a string is not a reference:
+		// the code never reads the function, and treating the text as a use hid a real orphan
+		// — measured, a function named in a nearby string literal was accepted as used.
+		// BasicLit keeps the quoting characters; blank everything between them, which is
+		// where a name could sit.
+		ast.Inspect(f, func(n ast.Node) bool {
+			lit, ok := n.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			off := fileFset.Position(lit.Pos()).Offset
+			endOff := fileFset.Position(lit.End()).Offset
+			for i := off + 1; i < endOff-1 && i < len(blanked); i++ {
+				if blanked[i] != '\n' {
+					blanked[i] = ' '
+				}
+			}
+			return true
+		})
 
 		for _, d := range f.Decls {
 			// Package-level constants and variables. The compiler does not report these —

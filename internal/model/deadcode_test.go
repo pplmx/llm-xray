@@ -66,6 +66,23 @@ func TestNoUnusedFunctionsInModel(t *testing.T) {
 				}
 			}
 		}
+		// String literals, for the same reason and by the same AST-based means. A name that
+		// appears only inside a string is text, not a reference; treating it as a use used to
+		// hide a real orphan in the app package.
+		ast.Inspect(f, func(n ast.Node) bool {
+			lit, ok := n.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			off := fileFset.Position(lit.Pos()).Offset
+			end := fileFset.Position(lit.End()).Offset
+			for i := off + 1; i < end-1 && i < len(out); i++ {
+				if out[i] != '\n' {
+					out[i] = ' '
+				}
+			}
+			return true
+		})
 
 		for _, d := range f.Decls {
 			// Package-level constants and variables. Unused ones are legal Go, so neither

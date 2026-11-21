@@ -163,10 +163,14 @@ type ffnParts struct {
 // terms by absolute value plus the exact remainder.
 //
 // The remainder is not optional. This model's FFN sum is not dominated by a few
-// terms — measured, the top three carry only 14–16% of the absolute mass — so
-// showing three terms alone would read as if they made the output. They do not;
-// they are only the largest single contributions, and the remainder closes the
-// sum exactly.
+// terms — measured over every unit of both layers at four positions, the top three
+// carry 5.8–16.6% of the absolute mass — so showing three terms alone would read as
+// if they made the output. They do not; they are only the largest single
+// contributions, and the remainder closes the sum exactly.
+//
+// An earlier version said "only 14–16%", which was the range an ad-hoc sample happened
+// to cover. The true floor is 5.8%, and stating too narrow a range weakens the argument
+// the sentence is making: the less the top three carry, the more the remainder matters.
 func computeFFN(hidden []float32, w2 []float32, dff, d, j int) ffnParts {
 	if j < 0 || j >= d || len(hidden) < dff || len(w2) < dff*d {
 		return ffnParts{}

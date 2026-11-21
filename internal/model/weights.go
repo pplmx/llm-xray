@@ -194,19 +194,33 @@ func (w *Weights) validate() error {
 		return fmt.Errorf("weights: %d layers, want %d", len(w.Layers), c.NLayer)
 	}
 	for i, l := range w.Layers {
-		want := map[string]struct {
+		// A slice, not a map, and ordered largest-first. Iterating a map here made the error
+		// message non-deterministic: a file whose layer has no tensors at all reported whichever
+		// name the runtime happened to reach, which measured ten distinct messages over 200
+		// parses — "w2 has 0 values, want 36864" one run and "ln1_b has 0 values, want 96" the
+		// next. The reader's first question is which tensor to look at, and the answer has to be
+		// the same every time; naming the biggest one also matches the comment above about
+		// checking tensors largest-first.
+		want := []struct {
+			name string
 			n    int
 			data []float32
 		}{
-			"ln1_g": {c.DModel, l.LN1G}, "ln1_b": {c.DModel, l.LN1B},
-			"wq": {c.DModel * c.DModel, l.WQ}, "wk": {c.DModel * c.DModel, l.WK},
-			"wv": {c.DModel * c.DModel, l.WV}, "wo": {c.DModel * c.DModel, l.WO},
-			"ln2_g": {c.DModel, l.LN2G}, "ln2_b": {c.DModel, l.LN2B},
-			"w1": {c.DModel * c.DFF, l.W1}, "w2": {c.DFF * c.DModel, l.W2},
+			{"w1", c.DModel * c.DFF, l.W1},
+			{"w2", c.DFF * c.DModel, l.W2},
+			{"wq", c.DModel * c.DModel, l.WQ},
+			{"wk", c.DModel * c.DModel, l.WK},
+			{"wv", c.DModel * c.DModel, l.WV},
+			{"wo", c.DModel * c.DModel, l.WO},
+			{"ln1_g", c.DModel, l.LN1G},
+			{"ln1_b", c.DModel, l.LN1B},
+			{"ln2_g", c.DModel, l.LN2G},
+			{"ln2_b", c.DModel, l.LN2B},
 		}
-		for name, e := range want {
+		for _, e := range want {
 			if len(e.data) != e.n {
-				return fmt.Errorf("weights: layer %d %s has %d values, want %d", i, name, len(e.data), e.n)
+				return fmt.Errorf("weights: layer %d %s has %d values, want %d",
+					i, e.name, len(e.data), e.n)
 			}
 		}
 	}

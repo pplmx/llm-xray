@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -312,5 +313,70 @@ func TestWhichConfigFieldsWeightsCanVary(t *testing.T) {
 				"reader can load; its guard comment needs the same caveat the vocab one now "+
 				"carries", c.name, err, c.name)
 		}
+	}
+}
+
+// TestValidateReportsTheSameTensorEveryTime pins the error's determinism.
+//
+// The per-layer tensor check used to iterate a map, so a file whose layer carried no tensors at
+// all reported whichever name the runtime reached first: measured, 200 parses produced ten
+// different messages, "w2 has 0 values, want 36864" on one run and "ln1_b has 0 values, want 96"
+// on the next. A reader uses the message to decide what to fix, so it cannot depend on map
+// ordering — and the useful answer for "everything is missing" is the largest tensor, which is
+// what the fixed order reports.
+func TestValidateReportsTheSameTensorEveryTime(t *testing.T) {
+	w, err := Bundled()
+	if err != nil {
+		t.Fatalf("load the bundled weights: %v", err)
+	}
+	raw, err := json.Marshal(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	layers, ok := doc["layers"].([]any)
+	if !ok || len(layers) == 0 {
+		t.Fatal("the marshalled weights have no layers to damage")
+	}
+	first := layers[0].(map[string]any)
+	for _, k := range []string{
+		"ln1_g", "ln1_b", "wq", "wk", "wv", "wo", "ln2_g", "ln2_b", "w1", "w2",
+	} {
+		first[k] = []any{}
+	}
+	bad, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The same input, parsed many times: one message, and it names the largest tensor.
+	const runs = 50
+	seen := map[string]bool{}
+	for i := 0; i < runs; i++ {
+		_, err := Parse(bad, "damaged")
+		if err == nil {
+			t.Fatal("a layer with no tensors parsed without error")
+		}
+		seen[err.Error()] = true
+	}
+	if len(seen) != 1 {
+		msgs := make([]string, 0, len(seen))
+		for m := range seen {
+			msgs = append(msgs, m)
+		}
+		sort.Strings(msgs)
+		t.Fatalf("%d parses of the same file gave %d different messages:\n  %s",
+			runs, len(seen), strings.Join(msgs, "\n  "))
+	}
+	got := ""
+	for m := range seen {
+		got = m
+	}
+	if !strings.Contains(got, " w1 has ") {
+		t.Fatalf("the message names a tensor other than the largest (%q); a file missing every "+
+			"tensor should point at the one whose absence matters most", got)
 	}
 }

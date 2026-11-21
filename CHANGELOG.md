@@ -842,6 +842,11 @@
 
 ### Fixed
 
+- **死代码检测的第二个盲区：包级 `type` 声明。** 上一轮补了 `const` / `var`，但 `type` 同样躲得过编译器——往 `internal/app` 加一个从未被引用的 `type orphanType struct{ x int }`，检测器照常通过
+  - 两个检测器都扩展到 `ast.TypeSpec`，与 `ValueSpec` 共用同一段挖空与查找逻辑
+  - 判定边界验证：`internal/app` 里从未被引用的 `type orphanType` → 报出；只在本文件使用的 `type localType` → **不误报**；**导出**的 `ExportedOrphan` → **正确豁免**（导出符号是 API，包内无人用不算残留）
+  - 扩展后两个包都直接通过，说明**当前代码里没有孤儿类型**——这是「补上检测能力」而不是「修一个已存在的缺陷」
+  - 同时确认方法（`func (a *App) orphanMethodOnLiveType()`）此前就能被抓到，不需要改动
 - **死代码检测只覆盖函数，包级常量与变量是盲区。** 两个包都有 `TestNoUnusedFunctions*`，但 Go 编译器对**包级**未使用的 `const` / `var` 不报错（只有函数内局部变量会），所以这类残留能一直留着，并且读起来像在使用的参数
   - 实测：往 `internal/app` 加一个 `const orphanConst = 42` 与 `var orphanVar = 7`，检测器照常通过
   - 扩展两个检测器覆盖 `ast.GenDecl` 的 `CONST` / `VAR`，沿用同一套「把声明处的名字挖空、再要求别处出现」的机制

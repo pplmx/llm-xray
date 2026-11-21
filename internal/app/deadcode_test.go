@@ -77,14 +77,18 @@ func TestNoUnusedFunctionsInApp(t *testing.T) {
 			// constant survives `go build` and `go vet` and reads like a live parameter.
 			// Same treatment as a function: record it, blank its own name, and require some
 			// other file position to mention it.
-			if gd, ok := d.(*ast.GenDecl); ok && (gd.Tok == token.CONST || gd.Tok == token.VAR) {
+			if gd, ok := d.(*ast.GenDecl); ok &&
+				(gd.Tok == token.CONST || gd.Tok == token.VAR || gd.Tok == token.TYPE) {
 				for _, spec := range gd.Specs {
-					vs, ok := spec.(*ast.ValueSpec)
-					if !ok {
-						continue
+					var ids []*ast.Ident
+					switch s := spec.(type) {
+					case *ast.ValueSpec:
+						ids = s.Names
+					case *ast.TypeSpec:
+						ids = []*ast.Ident{s.Name}
 					}
-					for _, id := range vs.Names {
-						if id.IsExported() || id.Name == "_" {
+					for _, id := range ids {
+						if id == nil || id.IsExported() || id.Name == "_" {
 							continue
 						}
 						declared[id.Name] = decl{file: name}

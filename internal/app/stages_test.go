@@ -1201,3 +1201,53 @@ func TestMatrixChromeTotalMatchesTheComment(t *testing.T) {
 			"302 as the same total; the cells would be sized from a different width", total)
 	}
 }
+
+// TestMatrixSizingConstantsMatchTheLayout pins the three figures the heatmap sizes itself from.
+//
+// stageChrome (the window top to the first scrollable row), leaving (the card's padding, chip row
+// and axis labels) and maxCell (the largest a cell should get) all carry comments explaining what
+// they are, and none of the three had a test: changing stageChrome from 228 to 240, leaving from
+// 160 to 180, or maxCell from 20 to 25 each left the whole suite green.
+//
+// stageChrome is the one that can be checked against the layout directly — its comment says it is
+// the offset of the first scrollable row, and the stage header sits at exactly that y. The other
+// two are budgets rather than positions, so they are held to their stated values: a change to
+// either is a deliberate layout decision that should also update this test and the comment.
+func TestMatrixSizingConstantsMatchTheLayout(t *testing.T) {
+	for _, size := range [][2]int{{1180, 720}, {1500, 940}, {1920, 1080}} {
+		a := newTestApp(t)
+		a.Step = 2 // the score stage draws the matrix
+		tr := ui.NewTester(a.View, size[0], size[1])
+		tr.Frame()
+
+		header, ok := tr.Find("第 3 / 7 步")
+		if !ok {
+			t.Fatalf("%dx%d: the stage header is not rendered", size[0], size[1])
+		}
+		// The row lands on a half-pixel boundary (measured 227.5), so the constant is that
+		// offset rounded up. A whole DIP of slack is the right tolerance: the point is that the
+		// figure tracks the layout, not that it matches to the subpixel.
+		const stageChrome = 228
+		if d := header.Y - float32(stageChrome); d < -1 || d > 1 {
+			t.Fatalf("%dx%d: the first scrollable row starts at y=%.1f, but the matrix sizing "+
+				"subtracts %d for it; the matrix would be sized from the wrong height",
+				size[0], size[1], header.Y, stageChrome)
+		}
+	}
+
+	// The two budget constants, held to the values their comments explain.
+	src, err := os.ReadFile("widgets.go")
+	if err != nil {
+		t.Fatalf("read widgets.go: %v", err)
+	}
+	for _, want := range []string{
+		"const stageChrome = 228",
+		"const leaving = 160",
+		"const maxCell = 20",
+	} {
+		if !strings.Contains(string(src), want) {
+			t.Fatalf("widgets.go no longer declares %q; if a budget changed, update its comment "+
+				"and this test together", want)
+		}
+	}
+}

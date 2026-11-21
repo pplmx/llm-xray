@@ -121,11 +121,28 @@ func TestParityEveryTensor(t *testing.T) {
 		t.Fatalf("fixture has %d layers, weights have %d", len(f.HeadsPerLayer), len(w.Layers))
 	}
 	tr := Forward(w, f.IDs)
+	// Absolute tolerance, and deliberately loose. Measured on this machine, the largest
+	// deviation across all 60 compared tensors is 1.653e-05 (L1.after_ffn), so 2e-4 leaves
+	// about 12x of headroom. That headroom is not for sloppiness: the reference values come
+	// from PyTorch with a different summation order and a different GELU approximation, and
+	// the gap between two float32 implementations of the same formula can move by a factor
+	// on another CPU. Tightening it to 2e-5 still passes here, but "still passes on the
+	// machine it was written on" is exactly the mistake an earlier round made with a
+	// fixed layout figure.
+	//
+	// The tolerance is not what catches real errors: raising LayerNorm's eps from 1e-5 to
+	// 1e-4 fails at 2e-4 already. It is sized to absorb implementation differences, not to
+	// be as small as possible.
 	const tol = 2e-4
 
+	var worstTensor float64
+	var worstAt string
 	check := func(name string, got [][]float32, want [][]float64) {
 		t.Helper()
 		d, where := diffMatrix(name, got, want, tol)
+		if d > worstTensor {
+			worstTensor, worstAt = d, where
+		}
 		if d > tol {
 			t.Errorf("%s: max diff %.6g at %s (tol %g)", name, d, where, tol)
 		} else if testing.Verbose() {
@@ -184,8 +201,25 @@ func TestParityEveryTensor(t *testing.T) {
 			worst = d
 		}
 	}
+	// The logit tolerance is looser than the tensor one for the same reason and by the same
+	// logic; measured, the worst logit deviation is well under a tenth of it.
 	if worst > 2e-3 {
 		t.Errorf("logits: max diff %.6g", worst)
 	}
 	t.Logf("all tensors match; worst logit diff %.3e", worst)
+
+	// And the headroom the tolerance's comment describes has to still be there. This is not a
+	// second assertion about correctness: a real error is caught by the comparisons above. It
+	// guards the reasoning written beside the constant, so the documented figure cannot drift
+	// away from the measurement it describes.
+	const documented = 1.653e-05
+	if worstTensor > documented*2 {
+		t.Errorf("the worst tensor deviation is now %.3e at %s; the comment on the tolerance "+
+			"states %.3e, which is what justifies the headroom — update both together",
+			worstTensor, worstAt, documented)
+	}
+	if worstTensor > tol/4 {
+		t.Errorf("the worst tensor deviation %.3e is over a quarter of the %.0e tolerance; the "+
+			"headroom the comment describes is gone", worstTensor, tol)
+	}
 }

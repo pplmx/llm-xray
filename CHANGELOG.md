@@ -830,6 +830,12 @@
 
 ### Fixed
 
+- **「app 包没有并发」这条判断靠字符串搜索，而它漏掉了最常见的写法。** CI 只对 `internal/model` 跑 `-race`，理由写在注释里：app 包单线程，且 race 下一帧要 24ms 而不是 0.8ms。`TestConcurrencyLivesOnlyInModel` 负责守住这个前提，但它只搜 `go func(` 与 `sync.WaitGroup`
+  - 实测：往 `internal/app` 里加一个 `go a.backgroundWork()`，**测试照常通过**——裸 `go` 语句两种模式都不匹配。而这个测试一旦失灵，CI 跳过 app 的 race 就变成真正的漏洞
+  - 改成用 **Go 语法树**判断：`ast.GoStmt`（任何 go 语句）、`ast.SendStmt`（channel 发送）、以及 `sync` / `sync/atomic` 的 import
+  - 破坏性验证三例，都需要**真实使用**才会触发（只 import 会先被编译器的 `imported and not used` 拦下）：裸 `go` 语句 → `a go statement at app.go:275`；`sync.Mutex` 实际加锁 → `imports sync in app.go`；channel 发送 → `a channel send at app.go:276`
+  - 反向也验证了：把 `internal/model` 的并发彻底摘掉（连 `sync` 一起）后，测试报 `internal/model no longer has goroutines`，说明它守的是**双向**前提
+  - **一次自己的恢复事故**：变异实验中 `/tmp` 的备份被后续改动覆盖，恢复时把文件弄坏了（`undefined: wg`）。用 `git checkout --` 从版本库恢复才干净——**备份文件不如版本库可靠**，这类实验应当直接改、直接 `git checkout` 还原
 - **上游报告里贴出的两个基准函数，仓库里只存在一个，另一个连名字都不对。** `docs/mygo-first-frame-regression.md` 给了完整代码，并说它们在 `internal/app` 里
   - `BenchmarkFirstFrame` —— 仓库里实际的函数叫 `BenchmarkView`，函数体一模一样
   - `BenchmarkSteadyFrame` —— **根本不存在**。仓库里没有任何基准复用同一个 `Tester`

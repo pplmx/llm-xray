@@ -3,6 +3,9 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -100,33 +103,65 @@ func TestCIConfigIsRunnable(t *testing.T) {
 }
 
 // TestConcurrencyLivesOnlyInModel pins the reason the race scope is what it is.
+//
+// CI races internal/model and skips internal/app, on the grounds that the app package has no
+// goroutines — under the race detector a rendered frame costs 24ms instead of 0.8ms, so racing it
+// buys nothing and takes eleven minutes. That premise has to be checked, or one day someone spawns
+// a goroutine in the app and the skipped race step becomes a hole.
+//
+// The check parses the package rather than searching for "go func(" and "sync.WaitGroup": a bare
+// `go helper()` matches neither, and measured, adding exactly that to internal/app left this test
+// green. The syntax tree sees every goroutine statement, plus the sync and atomic packages and any
+// code that sends on a channel.
 func TestConcurrencyLivesOnlyInModel(t *testing.T) {
-	hasConcurrency := func(pattern string) bool {
-		files, err := filepath.Glob(pattern)
+	// hasConcurrency reports whether any non-test file in dir starts a goroutine or shares state
+	// through a channel, a WaitGroup, a mutex or an atomic.
+	hasConcurrency := func(dir string) (bool, string) {
+		files, err := filepath.Glob(filepath.Join(dir, "*.go"))
 		if err != nil {
-			return false
+			t.Fatalf("glob %s: %v", dir, err)
 		}
 		for _, f := range files {
 			if strings.HasSuffix(f, "_test.go") {
 				continue
 			}
-			b, err := os.ReadFile(f)
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, f, nil, parser.SkipObjectResolution)
 			if err != nil {
-				continue
+				t.Fatalf("parse %s: %v", f, err)
 			}
-			src := string(b)
-			if strings.Contains(src, "go func(") || strings.Contains(src, "sync.WaitGroup") {
+			var why string
+			ast.Inspect(file, func(n ast.Node) bool {
+				switch node := n.(type) {
+				case *ast.GoStmt:
+					why = "a go statement at " + fset.Position(node.Pos()).String()
+					return false
+				case *ast.SendStmt:
+					why = "a channel send at " + fset.Position(node.Pos()).String()
+					return false
+				case *ast.ImportSpec:
+					path := strings.Trim(node.Path.Value, `"`)
+					if path == "sync" || path == "sync/atomic" {
+						why = "imports " + path + " in " + f
+						return false
+					}
+				}
 				return true
+			})
+			if why != "" {
+				return true, why
 			}
 		}
-		return false
+		return false, ""
 	}
-	if !hasConcurrency("../model/*.go") {
-		t.Fatal("internal/model no longer has goroutines; the -race step could be " +
-			"dropped or the comment explaining it is stale")
+
+	has, why := hasConcurrency("../model")
+	if !has {
+		t.Fatalf("internal/model no longer has goroutines (%s); the -race step could be dropped "+
+			"or the comment explaining it is stale", why)
 	}
-	if hasConcurrency("*.go") {
-		t.Fatal("internal/app has goroutines now, so the CI race step should cover it")
+	if has, why := hasConcurrency("."); has {
+		t.Fatalf("internal/app has concurrency now (%s), so the CI race step should cover it", why)
 	}
 }
 

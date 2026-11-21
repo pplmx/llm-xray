@@ -3,6 +3,7 @@ package app
 import (
 	"github.com/egoist/mygo/ui"
 	"math"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -1153,5 +1154,50 @@ func TestMaskCounterfactualHeadRangeIsMeasured(t *testing.T) {
 			t.Fatalf("the shown head's mean (%d%%) sits outside the range it states (%d%%–%d%%): %q",
 				mean, lo, hi, s)
 		}
+	}
+}
+
+// TestMatrixChromeTotalMatchesTheComment pins the figure the matrix sizing quotes.
+//
+// The heatmap sizes its cells from the width the window leaves after the sidebar, the inspector
+// and the card's own chrome, and names the total as 302 in the comment above. Those four numbers
+// (2 + 32 + 28 + 240) were summed inline, so changing any one of them was invisible: measured,
+// turning the 32 into 40 left the whole suite green across a full run while the matrix would have
+// been given 8 DIP less and the comment's 302 would no longer be the total.
+//
+// I nearly did exactly that myself — folding the leading 2 into a "16 padding per side" constant,
+// which reads tidier and sums to 284. The figures are now named individually and this test holds
+// their total to the number the comment states.
+func TestMatrixChromeTotalMatchesTheComment(t *testing.T) {
+	src, err := os.ReadFile("widgets.go")
+	if err != nil {
+		t.Fatalf("read widgets.go: %v", err)
+	}
+	text := string(src)
+
+	// The comment's own figure.
+	reComment := regexp.MustCompile(`393 − 224 − 330 − 302`)
+	if !reComment.MatchString(text) {
+		t.Fatal("the comment no longer quotes 393 − 224 − 330 − 302; update this test with the " +
+			"figure it states now")
+	}
+
+	// The four terms the code sums, by name.
+	terms := regexp.MustCompile(`(?s)borderX\s*=\s*(\d+).*?cardPadX\s*=\s*(\d+).*?columnGap\s*=\s*(\d+).*?secondCol\s*=\s*(\d+)`)
+	m := terms.FindStringSubmatch(text)
+	if m == nil {
+		t.Fatal("the card chrome constants are no longer declared in the form this test reads")
+	}
+	total := 0
+	for i := 1; i <= 4; i++ {
+		v, err := strconv.Atoi(m[i])
+		if err != nil {
+			t.Fatalf("cannot read %q as a number: %v", m[i], err)
+		}
+		total += v
+	}
+	if total != 302 {
+		t.Fatalf("the card chrome now sums to %d, but the comment above the matrix sizing quotes "+
+			"302 as the same total; the cells would be sized from a different width", total)
 	}
 }

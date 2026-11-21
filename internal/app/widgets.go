@@ -440,14 +440,23 @@ func (a *App) heatmapAxed(c *ui.Context, attn [][]float32, kind string, axes boo
 		// 160-DIP floor at every phone size — measured at 393 DIP: 393 − 224 − 330 − 302 is
 		// less than zero, so the matrix was 160 DIP wide with cells under 5 DIP in a column
 		// that had 361 DIP to give.
-		chrome := a.SidebarW + a.InspectorW + 2 + 32 + 28 + 240
+		// The card's own chrome, which the window width includes but the matrix does not get.
+		// Named rather than summed inline, and keeping the original figures exactly: the
+		// comment above quotes 302 for this total, and 2 + 32 + 28 + 240 is what produced it.
+		const (
+			borderX   = 2   // the card's left and right borders
+			cardPadX  = 32  // padding inside the card
+			columnGap = 28  // gap between the matrix and the column beside it
+			secondCol = 240 // the legend or the bar list, whichever that stage draws
+		)
+		chrome := a.SidebarW + a.InspectorW + borderX + cardPadX + columnGap + secondCol
 		if a.compact(c) {
 			// On a phone the card's second column — the legend, or the bars — wraps below the
 			// matrix instead of sitting beside it, so nothing is reserved for it and the matrix
 			// gets the card's whole inner width. Reserving 160 for it here asked for 2.5-DIP
 			// cells on a 64-token prompt at 375 DIP, when 4.9 fit: measured, the box came out
 			// 180 wide with the card's inner width at 315.
-			chrome = 32 + 28
+			chrome = cardPadX + columnGap
 		}
 		if room := w - chrome; room < avail {
 			avail = room

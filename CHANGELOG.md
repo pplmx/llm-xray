@@ -6,6 +6,12 @@
 
 ### Added
 
+- **`docs/keys.md` 里「目前七个阶段都至少有三张卡片」这句话没有守卫。** README 里那句「七个阶段目前都至少有三张」早就有测试盯着，但同一事实在 `keys.md` 里另写了一遍，而这一份没人查
+  - 实测七个阶段分别是 3 / 4 / 3 / 4 / 5 / 3 / 5 张，说法准确
+  - 风险是具体的：`TestCardRowIsHiddenOnSingleCardStages` 只问「**给定**卡片数之后索引行怎么显示」，从不过问卡片数本身；所以某阶段减到一张时，文档在说谎而这套测试全绿
+  - 修法按 CONTRIBUTING 第 8 条（成对的东西由一个来源决定）：**不新增独立测试**，把 `keys.md` 那侧合进已有的 `TestReadmeCardRowClaimsMatchTheStageTable`，让两句话共用同一份 `stageCards` 测量
+  - 破坏性验证两例：改 `keys.md` 措辞 → `docs/keys.md no longer says every stage has at least three cards`；删掉第 1 步的一张卡 → `stage 1 has 2`
+  - **一处自我纠正**：我最初写了一个独立测试，读到 `readme_test.go` 里已有同类断言后才发现两处会各自维护同一事实——那正是这个仓库反复要避免的形态
 - **`SECURITY.md` 里那几句技术承诺，没有任何测试在管。** 文档写「运行时不访问网络、不读用户目录之外的路径、不执行外部命令」——这三句都能直接对照 import 核实，目前也确实成立（全模块无 `net`*、无 `os/exec`，唯一的文件读取是 `weights.Load` 读用户 `-weights` 传入的那个路径）
   - 但加一行 `import "net/http"` 就能让这份安全文档开始说谎，而其余测试全绿
   - 新增 `TestSecurityDocClaimsMatchTheCode`：扫全部非测试 Go 文件禁止 `net` / `net/http` / `net/url` / `os/exec`，要求文档仍写着那两句承诺，并要求 `weights.go` 里 `os.ReadFile` 恰好出现**一次**（即唯一那处用户主动行为）

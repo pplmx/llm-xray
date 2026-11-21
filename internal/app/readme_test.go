@@ -834,6 +834,15 @@ func TestReadmeCardRowClaimsMatchTheStageTable(t *testing.T) {
 				step+1, len(chips))
 		}
 	}
+
+	// docs/keys.md states the same fact in its own words. Both documents, one measurement:
+	// checking them in one place means a stage cannot lose a card while only one of the two
+	// sentences is updated.
+	keys := readKeysDoc(t)
+	if !strings.Contains(keys, "七个阶段都至少有三张") {
+		t.Fatal("docs/keys.md no longer says every stage has at least three cards; if the claim " +
+			"changed, update this test with the wording you used")
+	}
 }
 
 // TestReadmeViewportOverflowMatchesTheLayout keeps the PageUp/PageDown row's claim honest.

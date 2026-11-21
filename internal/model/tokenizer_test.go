@@ -2,34 +2,60 @@ package model
 
 import "testing"
 
-// TestTokenizeKeepsInvalidBytes verifies that a byte-level tokenizer does not
-// expand an invalid byte into the three bytes of U+FFFD.
-func TestTokenizeKeepsInvalidBytes(t *testing.T) {
-	s := string([]byte{0xFF, 'a', 0x80})
-	tokens := Tokenize(s)
-	want := []int{0xFF, 'a', 0x80}
-	if len(tokens) != len(want) {
-		t.Fatalf("%d tokens, want %d", len(tokens), len(want))
+// TestForwardKeepsInvalidBytes verifies that the tokenizer the app actually runs does not expand
+// an invalid byte into the three bytes of U+FFFD.
+//
+// These two contracts used to be asserted against Tokenize, a function nothing outside its own
+// tests called. Forward takes ids and recovers the rune grouping through alignTokens, so the
+// contract is checked here instead — on the path the reader's prompt really goes through. Measured
+// before the change: Tokenize had two callers and both were tests.
+func TestForwardKeepsInvalidBytes(t *testing.T) {
+	w := smallWeights(t)
+	ids := []int{0xFF, 'a', 0x80}
+	tr := Forward(w, ids)
+	if len(tr.Tokens) != len(ids) {
+		t.Fatalf("%d tokens from %d ids; an invalid byte must not expand into replacement bytes",
+			len(tr.Tokens), len(ids))
 	}
-	for i, id := range want {
-		if tokens[i].ID != id || int(tokens[i].Byte) != id {
-			t.Fatalf("token %d = id %d byte %d, want %d", i, tokens[i].ID, tokens[i].Byte, id)
+	for i, id := range ids {
+		if tr.Tokens[i].ID != id || int(tr.Tokens[i].Byte) != id {
+			t.Fatalf("token %d = id %d byte %d, want %d", i, tr.Tokens[i].ID, tr.Tokens[i].Byte, id)
 		}
+	}
+	if tr.Tokens[0].Rune != 0 || tr.Tokens[2].Rune != 0 {
+		t.Fatalf("an invalid byte was given a rune (%q, %q); it is a raw byte, not a character",
+			tr.Tokens[0].Rune, tr.Tokens[2].Rune)
+	}
+	if tr.Tokens[1].Rune != 'a' {
+		t.Fatalf("the valid byte between two invalid ones lost its rune: %q", tr.Tokens[1].Rune)
 	}
 }
 
-// TestTokenizeStartIsRuneOffset checks the field's documented contract: all
-// byte tokens of one rune share that rune's index, not the byte offset.
-func TestTokenizeStartIsRuneOffset(t *testing.T) {
-	const s = "éa中"
-	tokens := Tokenize(s)
-	want := []int{0, 0, 1, 2, 2, 2}
-	if len(tokens) != len(want) {
-		t.Fatalf("%d tokens, want %d", len(tokens), len(want))
+// TestForwardStartIsRuneOffset checks the field's documented contract on the real path: all byte
+// tokens of one rune share that rune's index, not the byte offset.
+func TestForwardStartIsRuneOffset(t *testing.T) {
+	w := smallWeights(t)
+	// "éa中" as bytes.
+	ids := []int{0xC3, 0xA9, 'a', 0xE4, 0xB8, 0xAD}
+	tr := Forward(w, ids)
+	if len(tr.Tokens) != len(ids) {
+		t.Fatalf("%d tokens, want %d", len(tr.Tokens), len(ids))
 	}
+	want := []int{0, 0, 1, 2, 2, 2}
 	for i, start := range want {
-		if tokens[i].Start != start {
-			t.Fatalf("token %d start = %d, want %d", i, tokens[i].Start, start)
+		if tr.Tokens[i].Start != start {
+			t.Fatalf("token %d start = %d, want %d", i, tr.Tokens[i].Start, start)
+		}
+	}
+	// And the rune value itself is shared across a character's bytes.
+	for _, i := range []int{0, 1} {
+		if tr.Tokens[i].Rune != 'é' {
+			t.Fatalf("token %d rune = %q, want é", i, tr.Tokens[i].Rune)
+		}
+	}
+	for _, i := range []int{3, 4, 5} {
+		if tr.Tokens[i].Rune != '中' {
+			t.Fatalf("token %d rune = %q, want 中", i, tr.Tokens[i].Rune)
 		}
 	}
 }

@@ -17,44 +17,6 @@ type Token struct {
 	Rune  rune   // the rune this byte belongs to, for grouping
 }
 
-// Tokenize turns a prompt into byte tokens. Invalid UTF-8 bytes are kept
-// as-is: this is a byte-level tokenizer, so a malformed prompt must not
-// expand into replacement-character bytes. Valid multi-byte runes share one
-// rune index in Start and one Rune value across all their byte tokens.
-func Tokenize(s string) []Token {
-	tokens := make([]Token, 0, len(s))
-	runeIndex := 0
-	for i := 0; i < len(s); {
-		r, n := utf8.DecodeRuneInString(s[i:])
-		if r == utf8.RuneError && n == 1 {
-			b := s[i]
-			tokens = append(tokens, Token{
-				ID:    int(b),
-				Byte:  b,
-				Text:  renderByte(b),
-				Start: runeIndex,
-				Rune:  0,
-			})
-			i++
-			runeIndex++
-			continue
-		}
-		for k := 0; k < n; k++ {
-			b := s[i+k]
-			tokens = append(tokens, Token{
-				ID:    int(b),
-				Byte:  b,
-				Text:  renderByte(b),
-				Start: runeIndex,
-				Rune:  r,
-			})
-		}
-		i += n
-		runeIndex++
-	}
-	return tokens
-}
-
 func renderByte(b byte) string {
 	switch b {
 	case ' ':

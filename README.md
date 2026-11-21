@@ -145,7 +145,7 @@ just check    # gofmt 检查 + go vet + go test（CI 的主要门槛；要完全
 
 | 界面阶段 | 公式 | 读 | 函数 | 写回 |
 | --- | --- | --- | --- | --- |
-| 1 分词 | `id = byte(prompt)` | 提示词字符串 | `tokenizer.go: Tokenize` → `Truncate` | `Trace.Tokens`（每个 UTF-8 字节一个） |
+| 1 分词 | `id = byte(prompt)` | 提示词字符串 | `app.go: promptIDs` → `tokenizer.go: Truncate`，`Forward` 内用 `alignTokens` 补 `Rune` / `Start` | `Trace.Tokens`（每个 UTF-8 字节一个） |
 | 2 嵌入 | `x = E[id] + P[t]` | `Weights.TokEmbed`、`PosEmbed` | `Forward` 开头的 `copy` + `addInto` | `Trace.Embed` / `Trace.Pos` / `Trace.Input` |
 | 3 Q/K/V 与分数 | `score = q·k / √d_head`，`s ≤ t` | `LayerTrace.Norm1` | `matMulRows`（三个投影）+ `dot`，掩码处写 `-Inf` | `HeadTrace.Q/K/V`、`HeadTrace.Scores` |
 | 4 Softmax 与加权 | `α = softmax(score)`，`out = Σ α·v` | `HeadTrace.Scores` | `tensor.go: softmaxCausal`，再逐行加权 `V` | `HeadTrace.Attn`、`HeadTrace.Out` |

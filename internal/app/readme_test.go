@@ -1586,3 +1586,52 @@ func TestSecurityDocClaimsMatchTheCode(t *testing.T) {
 			"user passes with -weights", strings.Count(string(weights), "os.ReadFile("))
 	}
 }
+
+// TestStageOneNamesTheFunctionsThatActuallyRun keeps the tokenising row of the README's table true.
+//
+// The row said the first stage is `tokenizer.go: Tokenize` → `Truncate`, and neither half of that
+// was right: Tokenize had no caller outside its own tests, and the ids reaching Truncate are built
+// by app.promptIDs. Forward then recovers the rune grouping with alignTokens, which the row never
+// mentioned. A reader following the table to understand stage 1 would have opened a function that
+// does not participate.
+//
+// The function names in the row are checked against the source, so the table cannot describe a
+// call path the code does not have.
+func TestStageOneNamesTheFunctionsThatActuallyRun(t *testing.T) {
+	readme := readREADME(t)
+	row := ""
+	for _, line := range strings.Split(readme, "\n") {
+		if strings.HasPrefix(line, "| 1 分词 ") {
+			row = line
+			break
+		}
+	}
+	if row == "" {
+		t.Fatal("the README's stage table no longer has a 1 分词 row; update this test")
+	}
+
+	for _, want := range []string{"promptIDs", "Truncate", "alignTokens"} {
+		if !strings.Contains(row, want) {
+			t.Errorf("the 1 分词 row does not name %s, which is part of the real path", want)
+		}
+	}
+	if strings.Contains(row, "Tokenize") {
+		t.Error("the 1 分词 row still names Tokenize, which no production code calls")
+	}
+
+	// And those functions still exist where the row says they do.
+	files := []struct{ dir, file, decl string }{
+		{".", "app.go", "func promptIDs("},
+		{"../model", "tokenizer.go", "func Truncate("},
+		{"../model", "gpt.go", "func alignTokens("},
+	}
+	for _, f := range files {
+		src, err := os.ReadFile(filepath.Join(f.dir, f.file))
+		if err != nil {
+			t.Fatalf("read %s: %v", f.file, err)
+		}
+		if !strings.Contains(string(src), f.decl) {
+			t.Errorf("%s no longer declares %q, which the README's table names", f.file, f.decl)
+		}
+	}
+}

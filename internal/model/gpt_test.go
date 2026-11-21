@@ -64,15 +64,28 @@ func TestLayerNormStatistics(t *testing.T) {
 	}
 }
 
+// TestTokenizerRoundTrip goes through the path the app actually uses: a prompt string becomes
+// byte ids, Forward records a trace, and the trace decodes back to the same string.
+//
+// It used to call Tokenize for the first step, a function nothing outside tests called. The ids
+// have always come from taking each byte of the prompt, which is what this writes out.
 func TestTokenizerRoundTrip(t *testing.T) {
+	w := smallWeights(t)
 	for _, s := range []string{"hello world", "中文 token 化", "emoji 🙂 ok", ""} {
-		tokens := Tokenize(s)
-		ids := make([]int, len(tokens))
-		for i, tk := range tokens {
-			ids[i] = tk.ID
+		ids := make([]int, 0, len(s))
+		for i := 0; i < len(s); i++ {
+			ids = append(ids, int(s[i]))
 		}
-		if got := DecodeBytes(ids); got != s {
-			t.Fatalf("round trip %q → %q", s, got)
+		tr := Forward(w, ids)
+		if len(tr.Tokens) != len(ids) {
+			t.Fatalf("%q: %d tokens for %d bytes", s, len(tr.Tokens), len(ids))
+		}
+		got := make([]int, len(tr.Tokens))
+		for i, tk := range tr.Tokens {
+			got[i] = tk.ID
+		}
+		if decoded := DecodeBytes(got); decoded != s {
+			t.Fatalf("round trip %q → %q", s, decoded)
 		}
 	}
 }

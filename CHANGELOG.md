@@ -847,6 +847,12 @@
 
 ### Fixed
 
+- **README 第 1 步那张表写的调用链，两半都不对。** 它写 `tokenizer.go: Tokenize` → `Truncate`，而 `Tokenize` **在生产代码里零调用**，喂给 `Truncate` 的 id 来自 `app.promptIDs`；`Forward` 之后再用 `alignTokens` 补 `Rune` / `Start`，表里压根没提
+  - 这和第 86、87 轮是同一族：`Tokenize` 是第三处「由测试保活」的函数，只被三个测试调用
+  - 处理方式比前两轮更稳妥：**先把它的两条契约搬到真实路径**上。`TestForwardKeepsInvalidBytes` 验证无效字节不被展开成 U+FFFD 的三字节，`TestForwardStartIsRuneOffset` 验证同一 rune 的字节共享 rune 索引，`TestTokenizerRoundTrip` 改成走 `字符串 → 字节 id → Forward → Trace.Tokens → DecodeBytes`。三条都在 `Forward` 上通过后才删除 `Tokenize`
+  - 实测确认契约在新路径成立：`0xFF,0x61,0x80` 得到 3 个 token 而非 5 个，`é` 的两字节 `Start` 都是 0、`中` 的三字节都是 2
+  - 新增 `TestStageOneNamesTheFunctionsThatActuallyRun`：要求表里那一行出现 `promptIDs` / `Truncate` / `alignTokens`、**不出现** `Tokenize`，并确认这三个函数仍在表所说的文件里
+  - 破坏性验证两例：还原旧行 → 三处同时报出；从行里删掉 `alignTokens` → 单独报出
 - **`utf8Prefix` 是另一处由测试保活的死代码。** 它返回 `"110"` / `"1110"` 这类 UTF-8 长度前缀字符串，但界面早就不这么显示了——卡片用 `fmt.Sprintf("%02X %08b", b, b)` 打印完整二进制，前缀就是其中的高位，不需要单独的字符串
   - 它的测试注释还写着「checks the prefix **the card prints** beside each byte」，而**卡片并不打印前缀**。这是「注释描述了不存在的界面行为」，与第 83 轮 `-list` 同一类
   - 删除函数与测试。同一文件里的 `utf8Payload` 仍被生产代码调用两处，保留

@@ -79,7 +79,7 @@
   - 仍补了一条 `TestMeanFutureShareAnswersWithoutEnoughTokens`，因为它钉住的是**行为**（0 或 1 个 token 时返回 `(0, 0)` 而不是除零），并对 2 个 token 的情况验证真的产出平均值，防止守卫把功能关掉
 - 覆盖率 **96.4% → 96.5%**
 - **把覆盖率推进到 96.4%，补上四个此前没走到的分支。**
-  - **`LessonNames` 覆盖率 0%**：它是这个包里唯一被 `main.go` 调用、而 app 自己不用的导出函数（CLI 的 `-list`）。已有测试只在 `main.go` 源码里 grep `app.LessonNames()`——证明接线对了，没证明它返回的名字对。新增 `TestLessonNamesMatchesTheLessons`，并额外验证**每次返回新切片**（调用方若原地排序会污染下一次调用）
+  - **`LessonNames` 覆盖率 0%**：它是这个包里唯一被 `main.go` 调用、而 app 自己不用的导出函数（`-step` 越界时的错误消息要列出这七个阶段名）。已有测试只在 `main.go` 源码里 grep `app.LessonNames()`——证明接线对了，没证明它返回的名字对。新增 `TestLessonNamesMatchesTheLessons`，并额外验证**每次返回新切片**（调用方若原地排序会污染下一次调用）
   - **`causalInvarianceLine` 66.7%**：那个「有 K 个的预测变了；第一个在位置 P」的分支只在掩码坏掉时才出现，而内置权重满足不变式，所以它从没被渲染过。用直接构造 `causalComparison` 的方式测它——这正是掩码真出问题时读者会看到的那句话
   - **`layer()` 62.5%**：两个夹紧分支从没走到（应用不会把 `Layer` 留在越界位置）。补 `TestLayerClampsAnOutOfRangeIndex`，四个取值各一条
   - 破坏性验证六例，全部独立捕获：`LessonNames` 返回共享切片 / 少返回一个名字；`causalInvarianceLine` 去掉位置名 / 恒称一致；`layer()` 去掉两个夹紧（各以 panic 形式报出）
@@ -842,6 +842,11 @@
 
 ### Fixed
 
+- **我自己在第 53 轮写错的说明：`LessonNames` 并不服务于 `-list`。** 那条 CHANGELOG 写「它是唯一被 `main.go` 调用、而 app 自己不用的导出函数（**CLI 的 `-list`**）」，测试注释里也重复了同一句「main.go uses it for the -list flag」
+  - 实测：`main.go` 里**没有 `-list` 这个 flag**（`/tmp/llmx -list` 报 `flag provided but not defined`）。`LessonNames` 的真正用途是 `-step` 越界时的错误消息——`-step 99 is out of range: lessons are numbered 0-6 (分词, 嵌入, 注意力分数, …)`
+  - 修正 CHANGELOG 与测试注释，并新增 `TestLessonNamesIsUsedForTheStepRange`：要求 `main.go` 仍把 `app.LessonNames()` 赋给 `names`、仍用它与 `-step` 比较，并且**没有**长出 `-list` flag
+  - 破坏性验证两例：删掉那处赋值 → `no longer assigns app.LessonNames`；加一个 `-list` flag → `grew a -list flag`
+  - **这条缺陷的性质**：不是代码错，而是**我上一轮凭印象写下的说明错了**，而且写进了两处。注释里那句「读者会去找一个不存在的 CLI 功能」正是它的实际代价
 - **`bars` 有一个从不生效的 `color` 参数，而六个调用点都往里传颜色。** 函数里没有任何地方读它——真正画的时候用的是每一行自己的 `row.Color`。于是读一个调用会以为「这组条是绿色」，实际颜色由数据决定
   - 最明显的证据：`stages.go:544` 传的是 `colGreen`，而那一组里第二行的 `Color` 是 `colAccent2`——**传进去的颜色和画出来的颜色对不上，而代码里没有任何提示**
   - 删掉参数与全部调用点（13 处，两种切片变量名）。新增 `TestNoUnusedFunctionParameters` 扫全部非测试文件，`_` 命名的参数豁免

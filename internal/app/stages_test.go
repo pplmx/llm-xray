@@ -4,6 +4,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"math"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -798,16 +799,21 @@ func TestScoreColorAndHeatColorKeepTheirDegenerateBranches(t *testing.T) {
 	}
 }
 
-// TestLessonNamesMatchesTheLessons covers the command line's stage list.
+// TestLessonNamesMatchesTheLessons covers the names main.go prints when -step is out of range.
 //
-// LessonNames is the one exported function in this package that the app never calls: main.go
-// uses it for the -list flag. Its coverage was 0% — the test that mentions it greps main.go's
-// source for `app.LessonNames()` rather than calling anything, which proves the CLI wires it up
-// but not that it returns the right names.
+// LessonNames is the one exported function in this package that the app never calls. main.go
+// uses it to build the error message: `-step 99 is out of range: lessons are numbered 0-6
+// (分词, 嵌入, …)`. There is no -list flag — an earlier version of this comment said there was,
+// and the class of bug this test guards is exactly that kind of confidently wrong sentence about
+// what the CLI does.
+//
+// Its coverage was 0%: the test that mentions it greps main.go's source for `app.LessonNames()`
+// rather than calling anything, which proves the CLI wires it up but not that it returns the
+// right names.
 //
 // It has to agree with `lessons` in both directions: same count, same order, same spellings. A
-// name that drifts here is a name the `-list` output gets wrong, and a count that drifts is a
-// stage the CLI does not mention.
+// name that drifts here is a name the out-of-range message gets wrong, and a count that drifts
+// is a stage that message omits.
 func TestLessonNamesMatchesTheLessons(t *testing.T) {
 	names := LessonNames()
 	if len(names) != len(lessons) {
@@ -1288,5 +1294,35 @@ func TestDimmedControlsStayVisiblyOff(t *testing.T) {
 	dimmedRatio := contrastRatio(over(dim(colFaint), bg), bg)
 	if dimmedRatio >= plain {
 		t.Fatalf("dimming raised the contrast from %.2f:1 to %.2f:1", plain, dimmedRatio)
+	}
+}
+
+// TestLessonNamesIsUsedForTheStepRange pins what main.go does with the names.
+//
+// This exists because the comment above this test said, for a while, that main.go uses
+// LessonNames "for the -list flag". There is no -list flag. The names go into the error message
+// for an out-of-range -step, and a reader who trusted the comment went looking for a CLI feature
+// that does not exist.
+//
+// Checking the wiring is not busywork: the call site is the whole reason the function is exported,
+// and if main.go ever stops calling it the export and this accessor have no purpose left.
+func TestLessonNamesIsUsedForTheStepRange(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "main.go"))
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	body := string(src)
+
+	if !strings.Contains(body, "names := app.LessonNames()") {
+		t.Fatal("main.go no longer assigns app.LessonNames() to names; if the CLI stopped using " +
+			"it, the export and the accessor have no purpose")
+	}
+	if !strings.Contains(body, "*step >= len(names)") {
+		t.Fatal("main.go no longer range-checks -step against the lesson names; the names were " +
+			"being used to build that message")
+	}
+	if regexp.MustCompile(`flag\.\w+\("list"`).MatchString(body) {
+		t.Fatal("main.go grew a -list flag; if that is real, the comment on TestLessonNames " +
+			"should describe it and this test should check its output")
 	}
 }

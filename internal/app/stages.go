@@ -2673,7 +2673,12 @@ func (a *App) stageLayerRewrite(c *ui.Context) {
 		return
 	}
 	a.cardNamed(c, "每层改多少", func() {
-		sectionTitle(c, "每一层改写了多少", "进入 / 离开这一层的残差流有多像")
+		// Every figure on this card is a mean over the prompt's rows, while the 残差流 card
+		// right above it shows one position. Without saying so, a reader comparing the two sees
+		// ‖x‖ 13.12 there and 13.4 here and concludes one of them is wrong. The struct's own
+		// comments already call these means; the screen did not.
+		sectionTitle(c, "每一层改写了多少",
+			fmt.Sprintf("进入 / 离开这一层的残差流有多像 · 整句 %d 行平均", len(a.Trace.Tokens)))
 		mutedText(c, "上面那张阶梯图看的是每一层「说什么」，这里看每一层「改多少」。"+
 			"余弦接近 1 表示这一层基本只是把原向量传下去；接近 0 表示离开时的方向与进来时几乎无关。"+
 			"比值是这一层写进流里的长度除以它读到的长度——比值大，说明这一层在大量新增内容而不是微调。")
@@ -2706,9 +2711,9 @@ func (a *App) stageLayerRewrite(c *ui.Context) {
 		bars(c, rows, float32(maxRatio))
 		first, last := layers[0], layers[len(layers)-1]
 		workingsLinesCopyable(c, []string{
-			fmt.Sprintf("层 %d：进出余弦 %.3f，ΔFFN 是输入的 %.2f 倍（‖x‖ %.1f → %.1f）",
+			fmt.Sprintf("层 %d：进出余弦 %.3f，ΔFFN 是输入的 %.2f 倍（‖x‖ %.1f → %.1f，整句平均）",
 				first.Layer, first.CosineInOut, first.FFNRatio, first.InNorm, first.OutNorm),
-			fmt.Sprintf("层 %d：进出余弦 %.3f，ΔFFN 是输入的 %.2f 倍（‖x‖ %.1f → %.1f）",
+			fmt.Sprintf("层 %d：进出余弦 %.3f，ΔFFN 是输入的 %.2f 倍（‖x‖ %.1f → %.1f，整句平均）",
 				last.Layer, last.CosineInOut, last.FFNRatio, last.InNorm, last.OutNorm),
 			fmt.Sprintf("前一层改写了方向，后一层基本保持了方向——%d 层模型里大部分变换发生在第一层",
 				len(layers)),

@@ -5258,3 +5258,42 @@ func TestNegativeScoresStillLandInTheTopThree(t *testing.T) {
 			negTop3, slots, 100*float64(negTop3)/float64(slots))
 	}
 }
+
+// TestLayerRewriteSaysItsFiguresAreMeans keeps the card from contradicting its neighbour again.
+//
+// stageLayerRewrite averages over the prompt's rows while the 残差流 card directly above it shows
+// one position. Measured on the default prompt: this card's ‖x‖ for layer 0 is 13.4 and that
+// card's is 13.12, because one is a 36-row mean and the other is position 35. Both are right, and
+// nothing on the screen said so — the struct's own fields are documented as means, but the card
+// title, the card's intro and the copyable lines all read as if they described the same position.
+//
+// The check is on the rendered text: whatever else changes, the two places that quote these norms
+// have to say they are averages.
+func TestLayerRewriteSaysItsFiguresAreMeans(t *testing.T) {
+	a := newTestApp(t)
+	a.Step = 4
+	tr := ui.NewTester(a.View, 1500, 2400)
+	tr.Frame()
+
+	titleFound, copyFound := false, 0
+	for _, s := range tr.Texts() {
+		if strings.HasPrefix(s, "进入 / 离开这一层的残差流有多像") {
+			titleFound = true
+			if !strings.Contains(s, "整句") || !strings.Contains(s, "平均") {
+				t.Fatalf("the card subtitle does not say the figures are prompt-wide means: %q", s)
+			}
+		}
+		if strings.HasPrefix(s, "层 ") && strings.Contains(s, "进出余弦") {
+			copyFound++
+			if !strings.Contains(s, "整句平均") {
+				t.Fatalf("a copyable line quotes the norms without saying they are means: %q", s)
+			}
+		}
+	}
+	if !titleFound {
+		t.Fatal("the card subtitle is gone; this test cannot check what it says")
+	}
+	if copyFound == 0 {
+		t.Fatal("no copyable line quotes the layer rewrite figures; the check below is vacuous")
+	}
+}

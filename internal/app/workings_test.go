@@ -5204,3 +5204,57 @@ func readPrinted(t *testing.T, s string) float64 {
 	}
 	return f
 }
+
+// TestNegativeScoresStillLandInTheTopThree holds the evidence behind the score legend.
+//
+// The legend deliberately does not label the warm colour "suppresses attention". That claim would
+// be false here: a negative score very often ranks near the top of its own row, so the sign is not
+// what decides attention — the ranking within the row is. The note in the code recorded this as
+// "212 negative scores still land in their row's top 3"; measured over both layers and all four
+// heads it is 249 of 840 top-3 slots (29.6%).
+//
+// The bound is a floor, because the argument needs the phenomenon to be common, not to hit an exact
+// count. A drop to near zero would mean the sign does track the ranking after all, and the legend
+// could say so again.
+func TestNegativeScoresStillLandInTheTopThree(t *testing.T) {
+	a := newTestApp(t)
+	negTop3, slots := 0, 0
+	for li := range a.Trace.Layers {
+		for hi := range a.Trace.Layers[li].Heads {
+			h := a.Trace.Layers[li].Heads[hi]
+			for q := range h.Scores {
+				row := h.Scores[q]
+				var visible []int
+				for k := 0; k <= q && k < len(row); k++ {
+					if row[k] > -1e30 { // the mask writes -Inf above the diagonal
+						visible = append(visible, k)
+					}
+				}
+				if len(visible) == 0 {
+					continue
+				}
+				sort.Slice(visible, func(i, j int) bool { return row[visible[i]] > row[visible[j]] })
+				topN := 3
+				if len(visible) < topN {
+					topN = len(visible)
+				}
+				for i := 0; i < topN; i++ {
+					slots++
+					if row[visible[i]] < 0 {
+						negTop3++
+					}
+				}
+			}
+		}
+	}
+	if slots != 840 {
+		t.Fatalf("%d top-3 slots measured; the default prompt has 840 (two layers, four heads, "+
+			"35 rows of three)", slots)
+	}
+	// Measured 249. A quarter of the slots is the floor the legend's argument needs.
+	if negTop3 < slots/4 {
+		t.Fatalf("only %d of %d top-3 slots hold a negative score (%.1f%%); the legend's reason "+
+			"for not saying 'negative suppresses attention' no longer holds",
+			negTop3, slots, 100*float64(negTop3)/float64(slots))
+	}
+}

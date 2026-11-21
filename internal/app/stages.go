@@ -636,11 +636,16 @@ func (a *App) stageScores(c *ui.Context) {
 			})
 			ui.Column(c).Gap(6).Grow(1).Children(func() {
 				mutedText(c, "点积越大，说明这个位置的 Query 与那个位置的 Key 越匹配。除法因子让分数的量级不随维度增长。")
-				// The old legend said "negative: suppresses attention", which
-				// is false here: sign and relative weight disagree in 27% of
-				// this model's cells, and 212 negative scores still land in
-				// their row's top 3. Sign is only a convenient colour split;
-				// what decides attention is the ranking within a row.
+				// The old legend said "negative: suppresses attention", which is false here:
+				// measured over both layers and all four heads on the default prompt, 249 of
+				// the 840 top-3 slots hold a negative score (29.6%). Sign is only a convenient
+				// colour split; what decides attention is the ranking within a row.
+				//
+				// An earlier version of this note said "sign and relative weight disagree in
+				// 27% of this model's cells, and 212 negative scores still land in their row's
+				// top 3". Neither figure could be reproduced: 249 is the count across both
+				// layers, and the "27%" depended on how "disagree" was defined. The claim those
+				// numbers support is what matters, and it holds by a wide margin.
 				// List only the sign the matrix actually contains. A legend swatch for
 				// warm cells beside a matrix with none of them advertises a category
 				// the reader cannot find — measured on a two-token prompt, where every
